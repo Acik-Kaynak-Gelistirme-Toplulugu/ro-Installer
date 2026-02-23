@@ -25,7 +25,16 @@ cp -r * $RPM_BUILD_ROOT/usr/share/ro-installer/
 mkdir -p $RPM_BUILD_ROOT/usr/bin
 cat <<EOF > $RPM_BUILD_ROOT/usr/bin/ro-installer
 #!/bin/bash
+if [ "\$EUID" -eq 0 ]; then
+    xhost +SI:localuser:root >/dev/null 2>&1
+fi
 export PYTHONPATH=/usr/share/ro-installer
+
+# Pkexec strips environment variables, we must preserve them if they were passed
+if [ -n "\$WAYLAND_DISPLAY" ]; then export WAYLAND_DISPLAY=\$WAYLAND_DISPLAY; fi
+if [ -n "\$XDG_RUNTIME_DIR" ]; then export XDG_RUNTIME_DIR=\$XDG_RUNTIME_DIR; fi
+if [ -n "\$DISPLAY" ]; then export DISPLAY=\$DISPLAY; fi
+
 exec python3 /usr/share/ro-installer/main.py "\$@"
 EOF
 chmod +x $RPM_BUILD_ROOT/usr/bin/ro-installer
@@ -36,7 +45,7 @@ cat <<EOF > $RPM_BUILD_ROOT/usr/share/applications/ro-installer.desktop
 [Desktop Entry]
 Name=ro-Installer
 Comment=Install ro-ASD Operating System
-Exec=pkexec /usr/bin/ro-installer
+Exec=pkexec env DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY WAYLAND_DISPLAY=$WAYLAND_DISPLAY XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR /usr/bin/ro-installer
 Icon=drive-harddisk
 Terminal=false
 Type=Application
