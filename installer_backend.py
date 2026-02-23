@@ -143,6 +143,12 @@ class InstallWorker(QThread):
 
     def finish_and_umount(self):
         self.status_signal.emit("Son işlem ve temizlik yapılıyor...")
+        self.log_signal.emit("[*] Kurulum aracı hedef sistemden siliniyor (Self-Destruct)...")
+        
+        # Self-destruct: Kurulum bittiğinde aracı hedef sistemden kaldır.
+        chroot_base = f"chroot {self.target_mount} /bin/bash -c "
+        self.run_cmd(chroot_base + "'dnf remove -y ro-installer'")
+
         self.log_signal.emit("[*] Dağıtım bağlanma noktaları (mount) sökülüyor...")
         
         self.run_cmd(f"umount {self.target_mount}/dev")
