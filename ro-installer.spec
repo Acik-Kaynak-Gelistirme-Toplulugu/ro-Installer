@@ -4,7 +4,8 @@ Release:        1%{?dist}
 Summary:        ro-ASD Operating System Installer
 License:        GPLv3
 URL:            https://github.com/Acik-Kaynak-Gelistirme-Toplulugu/ro-Installer
-Source0:        %{name}-%{version}.tar.gz
+VCS:            {{{ git_dir_vcs }}}
+Source0:        {{{ git_dir_pack }}}
 BuildArch:      noarch
 
 Requires:       python3, python3-pyqt6, python3-pyqt6-webengine, parted, dosfstools, e2fsprogs, btrfs-progs, xfsprogs, rsync, kpmcore, squashfs-tools, polkit
@@ -13,7 +14,7 @@ Requires:       python3, python3-pyqt6, python3-pyqt6-webengine, parted, dosfsto
 ro-ASD Operating System Installer built with PyQt6 WebEngine and modern web UI technologies.
 
 %prep
-%autosetup -n %{name}-%{version}
+{{{ git_dir_setup_macro }}}
 
 %install
 rm -rf $RPM_BUILD_ROOT
