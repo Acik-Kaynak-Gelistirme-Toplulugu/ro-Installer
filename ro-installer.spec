@@ -23,34 +23,35 @@ cp -r * $RPM_BUILD_ROOT/usr/share/ro-installer/
 
 # Bin wrapper script
 mkdir -p $RPM_BUILD_ROOT/usr/bin
-cat <<EOF > $RPM_BUILD_ROOT/usr/bin/ro-installer
+cat << 'EOF' > $RPM_BUILD_ROOT/usr/bin/ro-installer
 #!/bin/bash
-if [ "\$EUID" -eq 0 ]; then
+if [ "$EUID" -ne 0 ]; then
     xhost +SI:localuser:root >/dev/null 2>&1
+    if sudo -n true 2>/dev/null; then
+        exec sudo -E env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" WAYLAND_DISPLAY="$WAYLAND_DISPLAY" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 "$0" "$@"
+    else
+        exec pkexec env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" WAYLAND_DISPLAY="$WAYLAND_DISPLAY" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 "$0" "$@"
+    fi
 fi
+
 export PYTHONPATH=/usr/share/ro-installer
-
-# Pkexec strips environment variables, we must preserve them if they were passed
-if [ -n "\$WAYLAND_DISPLAY" ]; then export WAYLAND_DISPLAY=\$WAYLAND_DISPLAY; fi
-if [ -n "\$XDG_RUNTIME_DIR" ]; then export XDG_RUNTIME_DIR=\$XDG_RUNTIME_DIR; fi
-if [ -n "\$DISPLAY" ]; then export DISPLAY=\$DISPLAY; fi
-
-exec python3 /usr/share/ro-installer/main.py "\$@"
+exec python3 /usr/share/ro-installer/main.py "$@"
 EOF
 chmod +x $RPM_BUILD_ROOT/usr/bin/ro-installer
 
 # Application Desktop Shortcut (App Menu)
 mkdir -p $RPM_BUILD_ROOT/usr/share/applications
-cat <<EOF > $RPM_BUILD_ROOT/usr/share/applications/ro-installer.desktop
+cat << 'EOF' > $RPM_BUILD_ROOT/usr/share/applications/ro-installer.desktop
 [Desktop Entry]
 Name=ro-Installer
 Comment=Install ro-ASD Operating System
-Exec=pkexec env DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY WAYLAND_DISPLAY=$WAYLAND_DISPLAY XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR /usr/bin/ro-installer
+Exec=/usr/bin/ro-installer
 Icon=drive-harddisk
 Terminal=false
 Type=Application
 Categories=System;Utility;
 EOF
+
 
 # Polkit policy (pkexec without password prompt for live environment, or with prompt generally)
 mkdir -p $RPM_BUILD_ROOT/usr/share/polkit-1/actions
