@@ -268,6 +268,37 @@ class InstallWorker(QThread):
         
         self.progress_signal.emit(85)
 
+    def install_themes_and_repos(self):
+        self.log_signal.emit("[*] GitHub ro-theme ve ro-repo verileri hedefe aktarılıyor...")
+        
+        # 1. DNF Repo Entegrasyonu
+        repo_content = "[ro-repo]\\nname=Ro ASD Software Repository\\nbaseurl=https://raw.githubusercontent.com/Acik-Kaynak-Gelistirme-Toplulugu/ro-repo/main/\\nenabled=1\\ngpgcheck=0\\n"
+        self.run_cmd(f"mkdir -p {self.target_mount}/etc/yum.repos.d")
+        self.run_cmd(f"echo -e '{repo_content}' > {self.target_mount}/etc/yum.repos.d/ro.repo")
+        
+        # 2. Tema Entegrasyonu
+        base_assets = "/opt/ro-packages/repo-tmp"
+        
+        # Eğer bu klasör Live ortamda varsa temanın kopyalanmasını gerçekleştir
+        self.run_cmd(f"mkdir -p {self.target_mount}/usr/share/kwin")
+        self.run_cmd(f"cp -r {base_assets}/ro-theme/g2-mehmet/kwin/* {self.target_mount}/usr/share/kwin/ 2>/dev/null || true")
+        
+        self.run_cmd(f"mkdir -p {self.target_mount}/usr/share/color-schemes")
+        self.run_cmd(f"cp -r {base_assets}/ro-theme/g3-servet/color-schemes/* {self.target_mount}/usr/share/color-schemes/ 2>/dev/null || true")
+        
+        self.run_cmd(f"mkdir -p {self.target_mount}/usr/share/plasma/desktoptheme")
+        self.run_cmd(f"cp -r {base_assets}/ro-theme/g3-servet/plasma/desktoptheme/* {self.target_mount}/usr/share/plasma/desktoptheme/ 2>/dev/null || true")
+        
+        self.run_cmd(f"mkdir -p {self.target_mount}/usr/share/sddm/themes")
+        self.run_cmd(f"cp -r {base_assets}/ro-theme/g4-tugba/sddm/themes/* {self.target_mount}/usr/share/sddm/themes/ 2>/dev/null || true")
+
+        # İşlenen yeni SDDM temasının sistemde varsayılan olmasını sağla
+        sddm_conf = "[Theme]\\nCurrent=Ro\\n"
+        self.run_cmd(f"mkdir -p {self.target_mount}/etc/sddm.conf.d")
+        self.run_cmd(f"echo -e '{sddm_conf}' > {self.target_mount}/etc/sddm.conf.d/install_theme.conf")
+
+        self.progress_signal.emit(87)
+
     def install_kernel(self):
         kernel_type = self.config.get('kernelType', 'Standart')
         self.status_signal.emit(self.t('kernel_status', kernel_type))
@@ -323,6 +354,7 @@ class InstallWorker(QThread):
             self.mount_target()
             self.copy_system()
             self.chroot_configure()
+            self.install_themes_and_repos()
             self.install_kernel()
             self.setup_bootloader()
             self.finish_and_umount()
