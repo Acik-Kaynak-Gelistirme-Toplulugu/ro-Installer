@@ -145,16 +145,25 @@ class InstallWorker(QThread):
             self.run_cmd(f"parted -s {target_hdd} mkpart primary {fs_type} 4609MiB 100%")
             
             # === FORMATLAMA (MKFS) ===
+            self.status_signal.emit("Çekirdek disk bilgilerini güncelliyor (Partprobe)...")
+            self.run_cmd("partprobe " + target_hdd)
+            self.run_cmd("udevadm settle")
+            time.sleep(2)
+            
+            # NVMe ve Loop disklerinde disk isminin sonu rakamla bitiyorsa 'p' eklenmesi gerekir.
+            # Örn: /dev/sda -> /dev/sda1 fakat /dev/nvme0n1 -> /dev/nvme0n1p1
+            part_prefix = "p" if target_hdd[-1].isdigit() else ""
+            
             self.status_signal.emit("Disk bölümleri biçimlendiriliyor (Format)...")
-            self.run_cmd(f"mkfs.fat -F32 {target_hdd}1")
-            self.run_cmd(f"mkswap {target_hdd}2")
+            self.run_cmd(f"mkfs.fat -F32 {target_hdd}{part_prefix}1")
+            self.run_cmd(f"mkswap {target_hdd}{part_prefix}2")
             
             if fs_type == 'ext4':
-                self.run_cmd(f"mkfs.ext4 -F {target_hdd}3")
+                self.run_cmd(f"mkfs.ext4 -F {target_hdd}{part_prefix}3")
             elif fs_type == 'btrfs':
-                self.run_cmd(f"mkfs.btrfs -f {target_hdd}3")
+                self.run_cmd(f"mkfs.btrfs -f {target_hdd}{part_prefix}3")
             elif fs_type == 'xfs':
-                self.run_cmd(f"mkfs.xfs -f {target_hdd}3")
+                self.run_cmd(f"mkfs.xfs -f {target_hdd}{part_prefix}3")
                 
         elif disk_type in ['Yanına', 'Install Alongside']:
             self.log_signal.emit(self.t('prepare_log_shrink'))
@@ -164,16 +173,18 @@ class InstallWorker(QThread):
 
     def mount_target(self):
         target_hdd = self.config.get('targetDisk', '/dev/sda')
+        part_prefix = "p" if target_hdd[-1].isdigit() else ""
+        
         self.status_signal.emit(self.t('mount_status'))
         self.log_signal.emit(self.t('mount_log', self.target_mount))
         
         self.run_cmd(f"mkdir -p {self.target_mount}")
-        self.run_cmd(f"mount {target_hdd}3 {self.target_mount}") # ROOT Mount
+        self.run_cmd(f"mount {target_hdd}{part_prefix}3 {self.target_mount}") # ROOT Mount
         
         self.run_cmd(f"mkdir -p {self.target_mount}/boot/efi")
-        self.run_cmd(f"mount {target_hdd}1 {self.target_mount}/boot/efi") # ESP Mount
+        self.run_cmd(f"mount {target_hdd}{part_prefix}1 {self.target_mount}/boot/efi") # ESP Mount
         
-        self.run_cmd(f"swapon {target_hdd}2") # Swap Aktif
+        self.run_cmd(f"swapon {target_hdd}{part_prefix}2") # Swap Aktif
         
         self.progress_signal.emit(35)
 
