@@ -7,6 +7,9 @@ from PyQt6.QtWebChannel import QWebChannel
 
 from installer_backend import BackendBridge
 
+# WebEngine'in root (sudo) yetkisiyle de sorunsuz çalışabilmesi için:
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--no-sandbox"
+
 class InstallerWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -70,6 +73,24 @@ class InstallerWindow(QMainWindow):
                         if (rebootBtn) rebootBtn.style.display = 'flex';
                     } else {
                         if (statusText) statusText.innerHTML = "Kurulum Başarısız: " + msg;
+                    }
+                });
+
+                window.backend.wifiListSignal.connect(function(jsonStr) {
+                    if (typeof receiveWifiList === "function") {
+                        receiveWifiList(jsonStr);
+                    }
+                });
+
+                window.backend.wifiConnectStatus.connect(function(status, msg) {
+                    if (typeof receiveWifiStatus === "function") {
+                        receiveWifiStatus(status, msg);
+                    }
+                });
+
+                window.backend.osDetectedSignal.connect(function(found, msg) {
+                    if (typeof receiveOsDetection === "function") {
+                        receiveOsDetection(found, msg);
                     }
                 });
             });

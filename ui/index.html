@@ -127,9 +127,18 @@
                             </div>
                         </div>
 
-                        <div class="action-row">
+                        <!-- Wi-Fi Şifre Kutusu (Gizli) -->
+                        <div id="wifi-password-box" class="form-group full-width"
+                            style="display:none; margin-top:15px;">
+                            <label>Wi-Fi Şifresi:</label>
+                            <input type="password" id="wifiInputPassword" class="glass-input"
+                                placeholder="Şifreyi giriniz...">
+                        </div>
+
+                        <div class="action-row" style="margin-top:20px;">
                             <button class="btn-secondary" onclick="prevPage()">Geri</button>
-                            <button class="btn-primary" onclick="nextPage()">Ağı Onayla ve İlerle</button>
+                            <button class="btn-primary" id="wifiConnectBtn" onclick="connectSelectedWifi()">Ağı Onayla
+                                ve İlerle</button>
                         </div>
                     </div>
                 </div>
@@ -281,7 +290,8 @@
                             </div>
 
                             <!-- Yanına Kur -->
-                            <div class="selection-card" onclick="selectDiskType('yanina')" style="padding: 20px 10px;">
+                            <div class="selection-card" id="alongside-card" onclick="selectDiskType('yanina')"
+                                style="padding: 20px 10px; display: none;">
                                 <div class="card-icon">
                                     <svg viewBox="0 0 24 24" width="36" height="36" stroke="currentColor"
                                         stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"
@@ -383,19 +393,28 @@
                         <!-- Basit Liste Seçici -->
                         <div class="form-group full-width">
                             <label>Bölge / Şehir</label>
-                            <select class="glass-input custom-dropdown">
-                                <option value="Istanbul">Marmara (İstanbul, TR) - GMT+3</option>
-                                <option value="London">Avrupa (Londra, UK) - GMT+0</option>
-                                <option value="New_York">Amerika (New York, USA) - GMT-5</option>
-                                <option value="Tokyo">Asya (Tokyo, JPN) - GMT+9</option>
+                            <select id="regionSelect" class="glass-input custom-dropdown">
+                                <option value="Europe/Istanbul">Marmara (İstanbul, TR) - GMT+3</option>
+                                <option value="Europe/London">Avrupa (Londra, UK) - GMT+0</option>
+                                <option value="America/New_York">Amerika (New York, USA) - GMT-5</option>
+                                <option value="Asia/Tokyo">Asya (Tokyo, JPN) - GMT+9</option>
                             </select>
                         </div>
 
                         <div class="form-group full-width" style="margin-top: 20px;">
                             <label>Sistem Dili (Locale)</label>
-                            <select class="glass-input custom-dropdown">
+                            <select id="localeSelect" class="glass-input custom-dropdown">
                                 <option value="tr_TR.UTF-8">Türkçe (Turkey)</option>
                                 <option value="en_US.UTF-8">İngilizce (US)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group full-width" style="margin-top: 20px;">
+                            <label>Klavye Düzeni (Keyboard Layout)</label>
+                            <select id="keyboardSelect" class="glass-input custom-dropdown"
+                                onchange="changeKeyboardEvent(this.value)">
+                                <option value="tr">Türkçe Q (TR)</option>
+                                <option value="en">English (US)</option>
                             </select>
                         </div>
 

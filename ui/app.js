@@ -64,6 +64,15 @@ function nextPage() {
 
     if (currentStep < totalSteps) {
 
+        // Yeni sayfaya geçmeden önceki hooklar:
+        if (currentStep === 1) { // 1. sayfadan 2. (Ağ) sayfasına geçişte wifi tara
+            scanNetworks();
+        }
+
+        if (currentStep === 4) { // 4. (Sys/Kurulum Modeli) sayfadan 5. (Disk) sayfasına geçerken OS tara
+            scanForOtherOS();
+        }
+
         // Önceki sayfayı gizle
         document.getElementById(`page-${currentStep}`).classList.remove('active');
 
@@ -155,11 +164,194 @@ function selectKernel(type) {
 // Wi-Fi Seçimi
 document.addEventListener('click', function (e) {
     if (e.target.closest('.wifi-item')) {
+        const item = e.target.closest('.wifi-item');
         const items = document.querySelectorAll('.wifi-item');
         items.forEach(i => i.classList.remove('selected'));
-        e.target.closest('.wifi-item').classList.add('selected');
+        item.classList.add('selected');
+
+        const wifiPwdBox = document.getElementById('wifi-password-box');
+        if (wifiPwdBox) {
+            const isSecure = item.getAttribute('data-security') && item.getAttribute('data-security') !== '--';
+            const isActive = item.getAttribute('data-active') === 'true';
+
+            if (isActive) {
+                wifiPwdBox.style.display = 'none'; // Zaten bağlıysa şifre sorma
+            } else if (isSecure) {
+                wifiPwdBox.style.display = 'block';
+                document.getElementById('wifiInputPassword').value = '';
+                document.getElementById('wifiInputPassword').focus();
+            } else {
+                wifiPwdBox.style.display = 'none';
+            }
+        }
     }
 });
+
+// === Wi-Fi Backend Fonksiyonları ===
+function scanNetworks() {
+    const listbox = document.querySelector('.wifi-list-box');
+    if (listbox) {
+        listbox.innerHTML = '<div style="text-align:center; padding: 20px;">Ağlar aranıyor... Lütfen bekleyin.</div>';
+    }
+    const wifiPwdBox = document.getElementById('wifi-password-box');
+    if (wifiPwdBox) wifiPwdBox.style.display = 'none';
+
+    if (window.backend) {
+        window.backend.scanWifi();
+    }
+}
+
+// Python'dan wifi listesi (JSON) buraya düşer
+window.receiveWifiList = function (jsonStr) {
+    const listbox = document.querySelector('.wifi-list-box');
+    if (!listbox) return;
+    listbox.innerHTML = ''; // Temizle
+
+    try {
+        const parsedData = JSON.parse(jsonStr);
+        let networks = [];
+        let ethActive = false;
+
+        if (Array.isArray(parsedData)) {
+            networks = parsedData;
+        } else {
+            networks = parsedData.networks || [];
+            ethActive = parsedData.ethernet_active || false;
+        }
+
+        if (ethActive) {
+            listbox.innerHTML = `
+                <div style="text-align:center; padding: 20px;">
+                    <div style="font-size: 40px; margin-bottom: 10px;">🔌</div>
+                    <h3 style="color: var(--accent-green);">Kablolu İnternet (Ethernet) Aktif</h3>
+                    <p style="font-size: 13px; opacity: 0.8; margin-top:10px;">Hazır bir internet bağlantısı algılandı. Wi-Fi menüsünü es geçerek otomatik olarak bir sonraki adıma yönlendiriliyorsunuz...</p>
+                </div>`;
+
+            const btn = document.getElementById('wifiConnectBtn');
+            if (btn) btn.style.display = 'none';
+
+            setTimeout(() => {
+                nextPage();
+            }, 2500);
+            return;
+        }
+
+        if (networks.length === 0) {
+            listbox.innerHTML = '<div style="text-align:center; padding: 20px;">Hiçbir Wi-Fi ağı bulunamadı. Lütfen cihazınızda Wi-Fi açık mı kontrol edin.</div>';
+            return;
+        }
+
+        const btn = document.getElementById('wifiConnectBtn');
+        if (btn) btn.style.display = 'block';
+
+        networks.forEach(net => {
+            const div = document.createElement('div');
+            div.className = 'wifi-item';
+            if (net.active) div.classList.add('selected');
+            div.setAttribute('data-ssid', net.ssid);
+            div.setAttribute('data-security', net.security);
+            div.setAttribute('data-active', net.active);
+
+            const signalLevel = net.signal > 70 ? '🟢' : (net.signal > 40 ? '🟡' : '🔴');
+            const secIcon = (net.security && net.security !== '--') ? '🔒' : '🔓';
+            const statusTxt = net.active ? 'Bağlı' : (net.signal + '%');
+
+            div.innerHTML = `
+                <span>${signalLevel} ${secIcon} ${net.ssid}</span>
+                <span class="wifi-status" style="${net.active ? 'color: var(--accent-green); font-weight: bold;' : ''}">${statusTxt}</span>
+            `;
+            listbox.appendChild(div);
+        });
+
+    } catch (e) {
+        console.error("WiFi JSON Parse hatası:", e);
+        listbox.innerHTML = '<div style="text-align:center;">Ağ listesi çözümlenemedi.</div>';
+    }
+};
+
+function connectSelectedWifi() {
+    const selectedItem = document.querySelector('.wifi-item.selected');
+    if (!selectedItem) {
+        showError("Lütfen bağlanmak veya teyit etmek için bir Wi-Fi ağı seçin.");
+        return;
+    }
+
+    const ssid = selectedItem.getAttribute('data-ssid');
+    const isActive = selectedItem.getAttribute('data-active') === 'true';
+
+    // Eğer zaten bağlıysa direkt sonraki sayfaya geç
+    if (isActive) {
+        nextPage();
+        return;
+    }
+
+    const isSecure = selectedItem.getAttribute('data-security') && selectedItem.getAttribute('data-security') !== '--';
+    let pwd = '';
+
+    if (isSecure) {
+        pwd = document.getElementById('wifiInputPassword').value;
+        if (!pwd) {
+            showError("Bu ağ şifreli. Lütfen şifre giriniz!");
+            return;
+        }
+    }
+
+    // Ağa bağlanma isteği
+    document.getElementById('wifiConnectBtn').innerText = "Bağlanıyor...";
+    document.getElementById('wifiConnectBtn').disabled = true;
+
+    if (window.backend) {
+        window.backend.connectWifi(ssid, pwd);
+    } else {
+        // Simülasyon
+        setTimeout(() => {
+            receiveWifiStatus(true, ssid);
+        }, 2000);
+    }
+}
+
+// Python'dan gelen bağlantı sonucu
+window.receiveWifiStatus = function (status, msg) {
+    const btn = document.getElementById('wifiConnectBtn');
+    if (btn) {
+        btn.innerText = "Ağı Onayla ve İlerle";
+        btn.disabled = false;
+    }
+
+    if (status) {
+        // Başarılıysa ilerle
+        nextPage();
+    } else {
+        showError(msg);
+    }
+};
+
+// === İşletim Sistemi (OS) Tespiti JS Bridge ===
+function scanForOtherOS() {
+    const alongsideCard = document.getElementById('alongside-card');
+    // Baştan gizleyelim ki, eğer önceki sayfaya dönülmüşse sahte pozitif olmasın.
+    if (alongsideCard) alongsideCard.style.display = 'none';
+
+    if (window.backend) {
+        window.backend.detectOS();
+    } else {
+        console.log("OS Tarayıcı (os-prober) başlatıldı. [SIMULATION]");
+        setTimeout(() => {
+            receiveOsDetection(true, "Simüle Windows Bulundu");
+        }, 1500);
+    }
+}
+
+window.receiveOsDetection = function (found, msg) {
+    const alongsideCard = document.getElementById('alongside-card');
+    if (found && alongsideCard) {
+        alongsideCard.style.display = 'flex'; // Veya block, stiline göre
+        console.log("OS Bulundu: " + msg);
+        // İsterseniz bu aşamada 'addLog' veya notification kullanılabilir.
+    } else {
+        console.log("OS Bulunamadı, Yanına Kur inaktif.");
+    }
+};
 
 // Disk Seçim Tipi
 function selectDiskType(type) {
@@ -226,14 +418,24 @@ function startInstallationJob() {
     const diskElement = document.querySelector('#page-5 .selection-card.active h3');
     const fsElement = document.querySelector('#fs-selection select');
 
+    // Region & Localization Elements
+    const regionVal = document.getElementById('regionSelect') ? document.getElementById('regionSelect').value : 'Europe/Istanbul';
+    const localeVal = document.getElementById('localeSelect') ? document.getElementById('localeSelect').value : 'tr_TR.UTF-8';
+    const keyboardVal = document.getElementById('keyboardSelect') ? document.getElementById('keyboardSelect').value : 'tr';
+
     const config = {
         name: document.getElementById('inputName') ? document.getElementById('inputName').value : '',
         surname: document.getElementById('inputSurname') ? document.getElementById('inputSurname').value : '',
         username: document.getElementById('inputUsername') ? document.getElementById('inputUsername').value : 'ro-user',
+        password: document.getElementById('inputPassword') ? document.getElementById('inputPassword').value : '1234',
+        rootPassword: document.getElementById('inputRootPassword') ? document.getElementById('inputRootPassword').value : '1234',
         sudo: sudoElement ? sudoElement.checked : true,
         kernelType: kernelElement ? kernelElement.innerText : 'Standart',
         diskType: diskElement ? diskElement.innerText : 'Tamamen',
-        fsType: fsElement ? fsElement.value : 'ext4'
+        fsType: fsElement ? fsElement.value : 'ext4',
+        region: regionVal,
+        locale: localeVal,
+        keyboard: keyboardVal
     };
 
     nextPage(); // Page 7'ye (Progress) geçis
@@ -303,6 +505,15 @@ document.addEventListener('mousemove', (e) => {
 // === Tema Yönetimi ===
 function toggleTheme() {
     document.body.classList.toggle('light-mode');
+}
+
+// Canlı Klavye Değiştirme
+function changeKeyboardEvent(val) {
+    if (window.backend) {
+        window.backend.changeLiveKeyboard(val);
+    } else {
+        console.log("Simulating live keyboard change to:", val);
+    }
 }
 
 // === Dil Yönetimi ===
