@@ -6,7 +6,7 @@ from PyQt6.QtCore import QObject, pyqtSlot, pyqtSignal, QThread
 
 # GÜVENLİK AYARI: Gerçek disk formatlamayı önlemek için DRY_RUN = True
 # Eğer bu False yapılırsa tüm komutlar sisteme harfiyen uygulanır!
-DRY_RUN = True
+DRY_RUN = False
 
 class InstallWorker(QThread):
     progress_signal = pyqtSignal(int)
