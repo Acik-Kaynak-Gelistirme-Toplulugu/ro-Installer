@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ro-Installer-beta</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=3.2">
     <!-- Qt WebChannel API -->
     <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 </head>
@@ -93,7 +93,8 @@
                             lütfen bilgisayarınızı kapatmayınız.</p>
 
                         <div class="form-group" style="margin: 20px auto; max-width: 250px;">
-                            <select id="langSelect" class="glass-input" onchange="changeLanguage(this.value)"
+                            <select id="langSelect" class="glass-input custom-dropdown"
+                                onchange="changeLanguage(this.value)"
                                 style="text-align: center; background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border);">
                                 <option value="tr">Türkçe</option>
                                 <option value="en">English</option>
@@ -137,6 +138,10 @@
 
                         <div class="action-row" style="margin-top:20px;">
                             <button class="btn-secondary" onclick="prevPage()">Geri</button>
+                            <button class="btn-secondary" onclick="nextPage()"
+                                style="border-color: rgba(255,255,255,0.2);"
+                                title="Şiddetle internete bağlanmanız önerilir. Eğer çevrimdışı devam ederseniz güncellemeler ve bazı performans paketleri kurulum bitene kadar eksik kalacaktır.">Çevrimdışı
+                                İlerle</button>
                             <button class="btn-primary" id="wifiConnectBtn" onclick="connectSelectedWifi()">Ağı Onayla
                                 ve İlerle</button>
                         </div>
@@ -235,9 +240,9 @@
                                         <line x1="12" y1="22.08" x2="12" y2="12"></line>
                                     </svg>
                                 </div>
-                                <h3>Standart Kurulum</h3>
-                                <p>Orijinal ve Kararlı Fedora 43 deposundan çekirdek <br><b>(İnternet bağlantısı ile DNF
-                                        üzerinden indirilir)</b></p>
+                                <h3 style="font-size: 15px;">Standart Kurulum</h3>
+                                <p style="font-size: 12px;">Mevcut Fedora deposundan orijinal, güncel ve kararlı
+                                    çekirdek.<br><b>(Kurulum medyası veya internetten yüklenir)</b></p>
                                 <div class="card-radio"></div>
                             </div>
 
@@ -250,9 +255,10 @@
                                         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
                                     </svg>
                                 </div>
-                                <h3>Gelişmiş-Deneysel</h3>
-                                <p>ro-ASD özel, yamalı ve performans odaklı çekirdek <br><b>(Yerel kurulum paketinden
-                                        gömülür)</b></p>
+                                <h3 style="font-size: 15px;">Gelişmiş-Deneysel</h3>
+                                <p style="font-size: 12px;">ro-ASD özel, yamalı ve performans odaklı çekirdek
+                                    <br><b>(Yerel kurulum paketinden gömülür)</b>
+                                </p>
                                 <div class="card-radio"></div>
                             </div>
                         </div>
@@ -270,6 +276,15 @@
                         <h2>Sistem Kurulum Diski ve Biçimlendirme</h2>
                         <p>ro-ASD'yi kurmak istediğiniz hedef diski ve kurulum yöntemini seçin.</p>
 
+                        <!-- Dinamik Disk Seçici (Backend'den Gelecek) -->
+                        <div class="form-group full-width" style="margin-bottom: 25px; text-align: left;">
+                            <label id="lblTargetDisk" style="display: flex; align-items: center; gap: 5px;">Kurulum
+                                Yapılacak Disk (Hedef Sürücü)</label>
+                            <select id="targetDiskSelect" class="glass-input custom-dropdown">
+                                <option value="">Sistem Diskleri Aranıyor...</option>
+                            </select>
+                        </div>
+
                         <div class="card-selection-row"
                             style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
                             <!-- Tamamen Kur -->
@@ -285,7 +300,10 @@
                                     </svg>
                                 </div>
                                 <h3 style="font-size: 15px;">Tüm Diske Kur</h3>
-                                <p style="font-size: 12px;">Disk tamamen silinir.</p>
+                                <p style="font-size: 12px; margin-top: 5px;">Seçtiğiniz diskteki <b>tüm veriler ve
+                                        işletim sistemleri kalıcı olarak silinir.</b> Depolama alanının tamamı ro-ASD
+                                    için optimize edilerek sıfırdan oluşturulur. Sıfır bir başlangıç isteyenler için en
+                                    temiz ve önerilen yöntemdir.</p>
                                 <div class="card-radio"></div>
                             </div>
 
@@ -306,8 +324,14 @@
                                         <line x1="12" y1="22.08" x2="12" y2="12"></line>
                                     </svg>
                                 </div>
-                                <h3 style="font-size: 15px;">Yanına Kur</h3>
-                                <p style="font-size: 12px;">Sistemlere dokunulmaz.</p>
+                                <h3
+                                    style="font-size: 15px; display: inline-flex; align-items: center; justify-content: center; gap: 5px;">
+                                    Yanına Kur <span class="tooltip-icon"
+                                        data-title="Bu seçenek mevcut Windows veya diğer Linux dağıtımlarınıza dokunmadan diskinizde boş bir alan açarak (Shrinking) ro-ASD'yi o alana güvenle kurmanızı sağlar. Sistem açılışında hangi işletim sistemine gireceğinizi seçebilirsiniz (Dual Boot).">?</span>
+                                </h3>
+                                <p style="font-size: 12px; margin-top: 5px;">Mevcut Windows veya Diğer Sistemlerinize
+                                    (Verilerinize) <b>dokunulmadan</b> yanlarına ek bir partition açılarak güvenli
+                                    şekilde (Dual Boot) kurulum yapılır.</p>
                                 <div class="card-radio"></div>
                             </div>
 
@@ -331,7 +355,9 @@
                         <div id="disk-options-container" style="margin-top: 20px; text-align: left;">
                             <!-- Dosya Sistemi -->
                             <div class="form-group full-width" id="fs-selection">
-                                <label>Kurulum Dosya Sistemi (Format)</label>
+                                <label style="display: flex; align-items: center; gap: 5px;">Kurulum Dosya Sistemi
+                                    (Format) <span class="tooltip-icon" style="text-transform: none; cursor: help;"
+                                        data-title="Linux diskinizin (Partition) okuma/yazma mimarisini belirler. Ext4 (Standart), BTRFS (Snapshot/Yedekleme destekli, SSD dostu) veya XFS (Yüksek kapasite/Sunucu) seçebilirsiniz.">?</span></label>
                                 <select class="glass-input custom-dropdown">
                                     <option value="btrfs">BTRFS (Önerilen, modern, esnek)</option>
                                     <option value="ext4" selected>EXT4 (Geleneksel, kararlı)</option>
@@ -344,13 +370,14 @@
                                 <div class="form-group full-width">
                                     <label>ro-ASD İçin Ayrılacak Kurulum Alanı:</label>
                                     <div class="slider-box" style="display: flex; gap:15px; align-items: center;">
-                                        <input type="range" class="glass-slider" min="20" max="500" value="50"
+                                        <input type="range" class="glass-slider" min="30" max="500" value="30"
                                             oninput="updateDiskText(this.value)" style="flex:1;">
                                         <div
                                             style="display: flex; gap:5px; background: rgba(0,0,0,0.3); padding: 5px; border-radius: 8px; border: 1px solid var(--glass-border);">
-                                            <input type="number" id="diskInput" value="50"
-                                                style="width:60px; background: transparent; border:none; color:white; font-size: 16px; text-align: center; outline:none;">
-                                            <select name="unit" class="glass-select"
+                                            <input type="number" id="diskInput" value="30"
+                                                style="width:60px; background: transparent; border:none; color:white; font-size: 16px; text-align: center; outline:none;"
+                                                oninput="updateDiskSlider(this.value)">
+                                            <select name="unit" class="glass-select custom-dropdown"
                                                 style="background: transparent; border:none; color:white; outline:none;">
                                                 <option value="GB">GB</option>
                                                 <option value="MB" style="color:black;">MB</option>
@@ -501,7 +528,7 @@
         </main>
     </div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=3.2"></script>
 </body>
 
 </html>

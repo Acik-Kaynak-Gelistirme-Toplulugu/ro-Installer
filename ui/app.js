@@ -71,6 +71,7 @@ function nextPage() {
 
         if (currentStep === 4) { // 4. (Sys/Kurulum Modeli) sayfadan 5. (Disk) sayfasına geçerken OS tara
             scanForOtherOS();
+            scanTargetDisks();
         }
 
         // Önceki sayfayı gizle
@@ -224,15 +225,16 @@ window.receiveWifiList = function (jsonStr) {
                 <div style="text-align:center; padding: 20px;">
                     <div style="font-size: 40px; margin-bottom: 10px;">🔌</div>
                     <h3 style="color: var(--accent-green);">Kablolu İnternet (Ethernet) Aktif</h3>
-                    <p style="font-size: 13px; opacity: 0.8; margin-top:10px;">Hazır bir internet bağlantısı algılandı. Wi-Fi menüsünü es geçerek otomatik olarak bir sonraki adıma yönlendiriliyorsunuz...</p>
+                    <p style="font-size: 13px; opacity: 0.8; margin-top:10px;">Hazır bir internet bağlantısı algılandı. Kuruluma dilediğiniz gibi devam edebilirsiniz.</p>
                 </div>`;
 
             const btn = document.getElementById('wifiConnectBtn');
-            if (btn) btn.style.display = 'none';
+            if (btn) {
+                btn.style.display = 'block';
+                btn.innerText = 'Devam Et';
+                btn.onclick = function () { nextPage(); };
+            }
 
-            setTimeout(() => {
-                nextPage();
-            }, 2500);
             return;
         }
 
@@ -345,11 +347,116 @@ function scanForOtherOS() {
 window.receiveOsDetection = function (found, msg) {
     const alongsideCard = document.getElementById('alongside-card');
     if (found && alongsideCard) {
-        alongsideCard.style.display = 'flex'; // Veya block, stiline göre
+        alongsideCard.style.display = 'block'; // DÜZELTİLDİ: Flex yerine block olmalı
         console.log("OS Bulundu: " + msg);
         // İsterseniz bu aşamada 'addLog' veya notification kullanılabilir.
     } else {
         console.log("OS Bulunamadı, Yanına Kur inaktif.");
+    }
+};
+
+// === Disk Tespiti JS Bridge ===
+function scanTargetDisks() {
+    const lbl = document.getElementById('lblTargetDisk');
+    if (lbl) lbl.innerText = "Disk Sürücüleri Taranıyor...";
+
+    if (window.backend) {
+        window.backend.scanDisks();
+    } else {
+        setTimeout(() => {
+            receiveDiskList(JSON.stringify([
+                { name: "/dev/sda", size: "500G", model: "Simüle SSD" },
+                { name: "/dev/nvme0n1", size: "1T", model: "Simüle NVMe" }
+            ]));
+        }, 1000);
+    }
+}
+
+window.receiveDiskList = function (jsonStr) {
+    try {
+        const disks = JSON.parse(jsonStr);
+        const select = document.getElementById('targetDiskSelect');
+        const lbl = document.getElementById('lblTargetDisk');
+        if (!select) return;
+
+        if (lbl) {
+            lbl.innerHTML = 'Kurulum Yapılacak Disk (Hedef Sürücü) <span class="tooltip-icon" style="text-transform: none; cursor: help;" data-title="ro-ASD\'nin ve sistem çekirdeklerinin kalıcı olarak yükleneceği donanım. Lütfen doğru diski seçtiğinizden emin olun!">?</span>';
+        }
+
+        select.innerHTML = '';
+        if (disks.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = "";
+            opt.text = "Kurulabilir disk bulunamadı!";
+            select.appendChild(opt);
+        } else {
+            disks.forEach((d, idx) => {
+                const opt = document.createElement('option');
+                opt.value = d.name;
+                opt.text = `${d.name} (${d.size}) - ${d.model}`;
+                opt.setAttribute('data-size', parseDiskSize(d.size));
+                if (idx === 0) opt.selected = true;
+                select.appendChild(opt);
+            });
+
+            // Adjust slider for first initially selected disk
+            if (select.options.length > 0) {
+                updateSliderLimits(parseFloat(select.options[0].getAttribute('data-size')));
+            }
+        }
+
+        // Custom Dropdown Görselliğini Güncelle (Sıfırdan inşa et)
+        const wrapper = select.closest('.custom-select-wrapper');
+        if (wrapper) {
+            const oldCustomSelect = wrapper.querySelector('.custom-select');
+            const oldOptionsList = wrapper.querySelector('.custom-select-options');
+            if (oldCustomSelect) oldCustomSelect.remove();
+            if (oldOptionsList) oldOptionsList.remove();
+
+            const customSelect = document.createElement('div');
+            customSelect.className = 'custom-select';
+            let selectedOpt = select.options[select.selectedIndex];
+            customSelect.innerHTML = selectedOpt ? selectedOpt.text : '';
+            wrapper.appendChild(customSelect);
+
+            const optionsList = document.createElement('div');
+            optionsList.className = 'custom-select-options';
+            Array.from(select.options).forEach((opt) => {
+                const optionDiv = document.createElement('div');
+                optionDiv.className = 'custom-option';
+                if (opt.selected) optionDiv.classList.add('selected');
+                optionDiv.innerHTML = opt.text;
+
+                optionDiv.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    customSelect.innerHTML = this.innerHTML;
+                    select.value = opt.value;
+
+                    if (opt.hasAttribute('data-size')) {
+                        updateSliderLimits(parseFloat(opt.getAttribute('data-size')));
+                    }
+
+                    select.dispatchEvent(new Event('change'));
+
+                    optionsList.querySelectorAll('.custom-option').forEach(o => o.classList.remove('selected'));
+                    this.classList.add('selected');
+                    customSelect.classList.remove('open');
+                });
+                optionsList.appendChild(optionDiv);
+            });
+            wrapper.appendChild(optionsList);
+
+            customSelect.addEventListener('click', function (e) {
+                e.stopPropagation();
+                document.querySelectorAll('.custom-select.open').forEach(s => {
+                    if (s !== customSelect) s.classList.remove('open');
+                });
+                this.classList.toggle('open');
+            });
+        }
+
+    } catch (e) {
+        console.log("Disk listesi islenirken hata:", e);
     }
 };
 
@@ -387,6 +494,51 @@ function openKPMcore() {
 // Slider Değerini Kutucuğa Aktarma
 function updateDiskText(val) {
     document.getElementById('diskInput').value = val;
+}
+
+// Kutucuktan Rakam Girildiğinde Slider'ı Güncelleme
+function updateDiskSlider(val) {
+    const slider = document.querySelector('.glass-slider');
+    if (!slider) return;
+    let num = parseInt(val);
+    if (isNaN(num)) num = 30;
+    if (num > parseInt(slider.max)) num = parseInt(slider.max);
+    if (num < parseInt(slider.min)) num = parseInt(slider.min);
+
+    slider.value = num;
+}
+
+// Lsblk'dan Gelen Size Bilgisini Numerik (GB) Olarak Parse Et
+function parseDiskSize(sizeStr) {
+    if (!sizeStr || sizeStr === 'Bilinmiyor') return 500;
+    let val = parseFloat(sizeStr.replace(/,/g, '.'));
+    if (sizeStr.includes('T')) return val * 1024;
+    if (sizeStr.includes('M')) return Math.max(0, val / 1024);
+    return val;
+}
+
+// Yeni Bir Disk Seçildiğinde Slider Max/Min Sınırlarını Hesapla
+function updateSliderLimits(maxGb) {
+    const slider = document.querySelector('.glass-slider');
+    const diskInput = document.getElementById('diskInput');
+    if (!slider || !diskInput) return;
+
+    const minGb = 30;
+    let maxVal = Math.floor(maxGb);
+    let calculatedMax = maxVal > minGb ? maxVal - 20 : maxVal; // 20GB buffer for host OS
+    if (calculatedMax < minGb) calculatedMax = minGb;
+
+    slider.min = minGb;
+    slider.max = calculatedMax;
+
+    if (parseInt(slider.value) > calculatedMax) {
+        slider.value = calculatedMax;
+        diskInput.value = calculatedMax;
+    }
+    if (parseInt(slider.value) < minGb) {
+        slider.value = minGb;
+        diskInput.value = minGb;
+    }
 }
 
 // Terminal (Log) Gizle/Göster
@@ -432,6 +584,7 @@ function startInstallationJob() {
         sudo: sudoElement ? sudoElement.checked : true,
         kernelType: kernelElement ? kernelElement.innerText : 'Standart',
         diskType: diskElement ? diskElement.innerText : 'Tamamen',
+        targetDisk: document.getElementById('targetDiskSelect') ? document.getElementById('targetDiskSelect').value : '/dev/sda',
         fsType: fsElement ? fsElement.value : 'ext4',
         region: regionVal,
         locale: localeVal,
@@ -460,6 +613,7 @@ function startInstallationJob() {
 // Otomatik Slayt Gösterisi
 let slideInterval;
 function startSlideshow() {
+    if (slideInterval) clearInterval(slideInterval);
     let currentSlide = 0;
     const slides = document.querySelectorAll('.slide-img');
     if (slides.length === 0) return;
@@ -545,19 +699,19 @@ const translations = {
         p4Title: "Kurulum Türü ve Çekirdek (Kernel) Seçimi",
         p4Desc: "Sistemin kalbini ve kurulum tipini belirleyin.",
         p4Opt1Title: "Standart Kurulum",
-        p4Opt1Desc: "Orijinal ve Kararlı Fedora 43 deposundan çekirdek <br><b>(İnternet bağlantısı ile DNF üzerinden indirilir)</b>",
+        p4Opt1Desc: "Mevcut Fedora deposundan orijinal, güncel ve kararlı çekirdek.<br><b>(Kurulum medyası veya internetten yüklenir)</b>",
         p4Opt2Title: "Gelişmiş-Deneysel",
         p4Opt2Desc: "ro-ASD özel, yamalı ve performans odaklı çekirdek <br><b>(Yerel kurulum paketinden gömülür)</b>",
 
         p5Title: "Sistem Kurulum Diski ve Biçimlendirme",
         p5Desc: "ro-ASD'yi kurmak istediğiniz hedef diski ve kurulum yöntemini seçin.",
         p5Opt1Title: "Tüm Diske Kur",
-        p5Opt1Desc: "Disk tamamen silinir.",
-        p5Opt2Title: "Yanına Kur",
-        p5Opt2Desc: "Sistemlere dokunulmaz.",
+        p5Opt1Desc: "Seçtiğiniz diskteki <b>tüm veriler ve işletim sistemleri kalıcı olarak silinir.</b> Depolama alanının tamamı ro-ASD için optimize edilerek sıfırdan oluşturulur. Sıfır bir başlangıç isteyenler için en temiz ve önerilen yöntemdir.",
+        p5Opt2Title: `Yanına Kur <span class="tooltip-icon" data-title="Bu seçenek mevcut Windows veya diğer Linux dağıtımlarınıza dokunmadan diskinizde boş bir alan açarak (Shrinking) ro-ASD'yi o alana güvenle kurmanızı sağlar. Sistem açılışında hangi işletim sistemine gireceğinizi seçebilirsiniz (Dual Boot).">?</span>`,
+        p5Opt2Desc: "Mevcut Windows veya Diğer Sistemlerinize (Verilerinize) <b>dokunulmadan</b> yanlarına ek bir partition açılarak güvenli şekilde (Dual Boot) kurulum yapılır.",
         p5Opt3Title: "Elle Bölümleme",
         p5Opt3Desc: "Diskleri siz ayarlayın.",
-        p5LblFs: "Kurulum Dosya Sistemi (Format)",
+        p5LblFs: `Kurulum Dosya Sistemi (Format) <span class="tooltip-icon" style="text-transform: none; cursor: help;" data-title="Linux diskinizin (Partition) okuma/yazma mimarisini belirler. Ext4 (Standart), BTRFS (Snapshot/Yedekleme destekli, SSD dostu) veya XFS (Yüksek kapasite/Sunucu) seçebilirsiniz.">?</span>`,
         p5LblSpace: "ro-ASD İçin Ayrılacak Kurulum Alanı:",
         p5ManDesc: "Devam ettiğinizde disk bölümlerini, dosya sistemlerini (Ext4, BTRFS vb.) ve bağlama noktalarını dilediğiniz gibi oluşturabilirsiniz.",
         p5ManBtn: "Gelişmiş Bölümleme Aracı (KPMcore)",
@@ -600,19 +754,19 @@ const translations = {
         p4Title: "Installation Type & Kernel Selection",
         p4Desc: "Determine the heart of your system and the installation type.",
         p4Opt1Title: "Standard Installation",
-        p4Opt1Desc: "Original and stable OS kernel from Fedora 43 repository <br><b>(Requires internet, via DNF)</b>",
+        p4Opt1Desc: "Original, up-to-date and stable kernel from Fedora repository.<br><b>(Installed from media or internet)</b>",
         p4Opt2Title: "Advanced / Experimental",
         p4Opt2Desc: "ro-ASD custom, patched, and performance-oriented kernel <br><b>(Embedded from local disk)</b>",
 
         p5Title: "Installation Disk & Formatting",
         p5Desc: "Select the target disk and installation method for ro-ASD.",
         p5Opt1Title: "Erase Entire Disk",
-        p5Opt1Desc: "The disk will be completely erased.",
-        p5Opt2Title: "Install Alongside",
-        p5Opt2Desc: "Existing OS systems will remain intact.",
+        p5Opt1Desc: "<b>All data and operating systems on the selected disk will be permanently deleted.</b> The entire storage space will be optimized for ro-ASD from scratch. This is the cleanest and recommended method for a fresh start.",
+        p5Opt2Title: `Install Alongside <span class="tooltip-icon" data-title="This option allows you to safely install ro-ASD in a new empty space (Shrinking) on your disk without touching your existing Windows or other Linux distributions. You can choose which OS to boot into at startup (Dual Boot).">?</span>`,
+        p5Opt2Desc: "Installs safely (Dual Boot) by creating an additional partition <b>without touching</b> your existing Windows or other systems (data).",
         p5Opt3Title: "Manual Partitioning",
         p5Opt3Desc: "Configure the disks yourself.",
-        p5LblFs: "Installation File System (Format)",
+        p5LblFs: `Installation File System (Format) <span class="tooltip-icon" style="text-transform: none; cursor: help;" data-title="Determines the read/write architecture of your Linux disk (Partition). You can choose Ext4 (Standard), BTRFS (Snapshot/Backup supported, SSD friendly) or XFS (High capacity/Server).">?</span>`,
         p5LblSpace: "Installation Space Allocated for ro-ASD:",
         p5ManDesc: "When you continue, you can create disk partitions, file systems (Ext4, BTRFS etc.), and mount points as you wish.",
         p5ManBtn: "Advanced Partition Tool (KPMcore)",
@@ -684,11 +838,11 @@ function changeLanguage(lang) {
     document.querySelector('#page-5 > div > p').innerText = t.p5Desc;
 
     const p5Cards = document.querySelectorAll('#page-5 .selection-card');
-    p5Cards[0].querySelector('h3').innerText = t.p5Opt1Title; p5Cards[0].querySelector('p').innerText = t.p5Opt1Desc;
-    p5Cards[1].querySelector('h3').innerText = t.p5Opt2Title; p5Cards[1].querySelector('p').innerText = t.p5Opt2Desc;
-    p5Cards[2].querySelector('h3').innerText = t.p5Opt3Title; p5Cards[2].querySelector('p').innerText = t.p5Opt3Desc;
+    p5Cards[0].querySelector('h3').innerHTML = t.p5Opt1Title; p5Cards[0].querySelector('p').innerHTML = t.p5Opt1Desc;
+    p5Cards[1].querySelector('h3').innerHTML = t.p5Opt2Title; p5Cards[1].querySelector('p').innerHTML = t.p5Opt2Desc;
+    p5Cards[2].querySelector('h3').innerHTML = t.p5Opt3Title; p5Cards[2].querySelector('p').innerHTML = t.p5Opt3Desc;
 
-    document.querySelector('#fs-selection label').innerText = t.p5LblFs;
+    document.querySelector('#fs-selection label').innerHTML = t.p5LblFs;
     document.querySelector('#custom-disk-options label').innerText = t.p5LblSpace;
     document.querySelector('#manual-partitioning-box p').innerText = t.p5ManDesc;
     document.querySelector('#manual-partitioning-box button').innerText = t.p5ManBtn;
@@ -715,3 +869,64 @@ function safelySetText(id, text) {
     const el = document.getElementById(id);
     if (el) el.innerText = text;
 }
+
+// --- BUG FIX: QtWebEngine Translucent Native Dropdown Fix ---
+function setupCustomSelects() {
+    const selects = document.querySelectorAll('select.custom-dropdown');
+    selects.forEach(select => {
+        select.classList.add('select-hidden');
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'custom-select-wrapper';
+        select.parentNode.insertBefore(wrapper, select);
+        wrapper.appendChild(select);
+
+        const customSelect = document.createElement('div');
+        customSelect.className = 'custom-select';
+
+        let selectedOpt = select.options[select.selectedIndex];
+        customSelect.innerHTML = selectedOpt ? selectedOpt.text : '';
+        wrapper.appendChild(customSelect);
+
+        const optionsList = document.createElement('div');
+        optionsList.className = 'custom-select-options';
+
+        Array.from(select.options).forEach((opt, idx) => {
+            const optionDiv = document.createElement('div');
+            optionDiv.className = 'custom-option';
+            if (opt.selected) optionDiv.classList.add('selected');
+            optionDiv.innerHTML = opt.text;
+
+            optionDiv.addEventListener('click', function (e) {
+                e.stopPropagation();
+                customSelect.innerHTML = this.innerHTML;
+                select.value = opt.value;
+                select.dispatchEvent(new Event('change'));
+
+                optionsList.querySelectorAll('.custom-option').forEach(o => o.classList.remove('selected'));
+                this.classList.add('selected');
+
+                customSelect.classList.remove('open');
+            });
+            optionsList.appendChild(optionDiv);
+        });
+
+        wrapper.appendChild(optionsList);
+
+        customSelect.addEventListener('click', function (e) {
+            e.stopPropagation();
+            document.querySelectorAll('.custom-select.open').forEach(s => {
+                if (s !== customSelect) s.classList.remove('open');
+            });
+            this.classList.toggle('open');
+        });
+    });
+
+    document.addEventListener('click', function () {
+        document.querySelectorAll('.custom-select.open').forEach(s => {
+            s.classList.remove('open');
+        });
+    });
+}
+
+document.addEventListener("DOMContentLoaded", setupCustomSelects);

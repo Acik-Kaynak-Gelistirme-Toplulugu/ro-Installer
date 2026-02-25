@@ -88,6 +88,18 @@ class InstallerWindow(QMainWindow):
                     }
                 });
 
+                window.backend.osDetectedSignal.connect(function(status, msg) {
+                    if (typeof receiveOsDetection === "function") {
+                        receiveOsDetection(status, msg);
+                    }
+                });
+
+                window.backend.diskListSignal.connect(function(jsonStr) {
+                    if (typeof receiveDiskList === "function") {
+                        receiveDiskList(jsonStr);
+                    }
+                });
+
                 window.backend.osDetectedSignal.connect(function(found, msg) {
                     if (typeof receiveOsDetection === "function") {
                         receiveOsDetection(found, msg);
