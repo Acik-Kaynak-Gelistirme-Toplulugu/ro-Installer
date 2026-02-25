@@ -447,11 +447,45 @@ class BackendBridge(QObject):
                 for dev in data['blockdevices']:
                     # loop, rom (cdrom), ram gibi hedefleri kurulum listesinden çıkart
                     if dev.get('type') == 'disk' and not dev.get('name', '').startswith(('loop', 'ram', 'sr', 'zram')):
-                        name = f"/dev/{dev.get('name')}"
+                        disk_name = dev.get('name')
+                        name = f"/dev/{disk_name}"
                         size = dev.get('size', 'Bilinmiyor')
                         model = dev.get('model', 'Model Bilinmiyor')
                         if model is None: model = 'Bilinmeyen Disk'
-                        disks.append({'name': name, 'size': size, 'model': model.strip()})
+                        
+                        used_bytes = 0
+                        has_parts = False
+                        
+                        try:
+                            parts_cmd = subprocess.run(['lsblk', '-J', '-b', name, '-o', 'NAME,FSTYPE'], capture_output=True, text=True)
+                            pdata = json.loads(parts_cmd.stdout)
+                            if 'blockdevices' in pdata and 'children' in pdata['blockdevices'][0]:
+                                has_parts = True
+                                for p in pdata['blockdevices'][0]['children']:
+                                    part_name = p.get('name')
+                                    fstype = p.get('fstype')
+                                    
+                                    # Sadece desteklenen dosya sistemlerinden boyut okunacak
+                                    if fstype in ['ntfs', 'ext4', 'vfat', 'xfs', 'btrfs', 'exfat', 'fat32']:
+                                        mnt = f"/tmp/ro_scan_{part_name}"
+                                        os.makedirs(mnt, exist_ok=True)
+                                        # Mount read-only temporary
+                                        res = subprocess.run(['mount', '-r', f'/dev/{part_name}', mnt], capture_output=True)
+                                        if res.returncode == 0:
+                                            df_res = subprocess.run(['df', '-B1', mnt], capture_output=True, text=True)
+                                            lines = df_res.stdout.split('\n')
+                                            if len(lines) > 1:
+                                                parts = lines[1].split()
+                                                if len(parts) >= 3 and parts[2].isdigit():
+                                                    used_bytes += int(parts[2])
+                                            subprocess.run(['umount', '-l', mnt])
+                                        
+                                        if os.path.exists(mnt):
+                                            os.rmdir(mnt)
+                        except Exception as calc_err:
+                            self.logMessageSignal.emit(f"[UYARI] {name} dolu alan hesabı yapılamadı: {calc_err}")
+
+                        disks.append({'name': name, 'size': size, 'model': model.strip(), 'used_bytes': used_bytes, 'has_parts': has_parts})
                         
             self.diskListSignal.emit(json.dumps(disks))
         except Exception as e:

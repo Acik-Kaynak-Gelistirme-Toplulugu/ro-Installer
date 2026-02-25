@@ -41,6 +41,11 @@ function nextPage() {
             return; // İlerlemeyi durdur ve hata ver
         }
 
+        if (pass.length < 4) {
+            showError("Ana yetkili şifresi güvenlik nedeniyle en az 4 karakter uzunluğunda olmalıdır.");
+            return;
+        }
+
         if (pass !== passConf) {
             showError("Kullanıcı şifreleri birbiriyle eşleşmiyor. Lütfen iki şifreyi de aynı giriniz!");
             return; // İlerlemeyi durdur
@@ -53,6 +58,10 @@ function nextPage() {
 
             if (!rootPass || !rootPassConf) {
                 showError("Root (Yönetici) olabilmek için Root (su) şifresi alanlarının doldurulması zorunludur!");
+                return;
+            }
+            if (rootPass.length < 4) {
+                showError("Root yetki şifresi güvenlik nedeniyle en az 4 karakter uzunluğunda olmalıdır.");
                 return;
             }
             if (rootPass !== rootPassConf) {
@@ -393,15 +402,28 @@ window.receiveDiskList = function (jsonStr) {
             disks.forEach((d, idx) => {
                 const opt = document.createElement('option');
                 opt.value = d.name;
-                opt.text = `${d.name} (${d.size}) - ${d.model}`;
+
+                let usedStr = "";
+                let usedGb = 0;
+                if (d.has_parts && d.used_bytes > 0) {
+                    usedGb = (d.used_bytes / (1024 * 1024 * 1024));
+                    usedStr = ` | Dolu: ${usedGb.toFixed(1)} GB`;
+                }
+
+                opt.text = `${d.name} (${d.size}${usedStr}) - ${d.model}`;
                 opt.setAttribute('data-size', parseDiskSize(d.size));
+                opt.setAttribute('data-used', usedGb.toString());
+
                 if (idx === 0) opt.selected = true;
                 select.appendChild(opt);
             });
 
             // Adjust slider for first initially selected disk
             if (select.options.length > 0) {
-                updateSliderLimits(parseFloat(select.options[0].getAttribute('data-size')));
+                updateSliderLimits(
+                    parseFloat(select.options[0].getAttribute('data-size')),
+                    parseFloat(select.options[0].getAttribute('data-used'))
+                );
             }
         }
 
@@ -433,7 +455,10 @@ window.receiveDiskList = function (jsonStr) {
                     select.value = opt.value;
 
                     if (opt.hasAttribute('data-size')) {
-                        updateSliderLimits(parseFloat(opt.getAttribute('data-size')));
+                        updateSliderLimits(
+                            parseFloat(opt.getAttribute('data-size')),
+                            parseFloat(opt.getAttribute('data-used') || 0)
+                        );
                     }
 
                     select.dispatchEvent(new Event('change'));
@@ -518,15 +543,43 @@ function parseDiskSize(sizeStr) {
 }
 
 // Yeni Bir Disk Seçildiğinde Slider Max/Min Sınırlarını Hesapla
-function updateSliderLimits(maxGb) {
+function updateSliderLimits(maxGb, usedGb = 0) {
     const slider = document.querySelector('.glass-slider');
     const diskInput = document.getElementById('diskInput');
     if (!slider || !diskInput) return;
 
     const minGb = 30;
-    let maxVal = Math.floor(maxGb);
-    let calculatedMax = maxVal > minGb ? maxVal - 20 : maxVal; // 20GB buffer for host OS
-    if (calculatedMax < minGb) calculatedMax = minGb;
+
+    // Gerçek boş alan: Toplam kapasite - Dolu kapasite
+    let totalCap = Math.floor(maxGb);
+    let trueFree = totalCap - usedGb;
+
+    // İşletim sisteminin esnekliği için 10GB boşluk bırak
+    let calculatedMax = Math.floor(trueFree) - 10;
+
+    // Kullanıcıya bilgi verecek hata veya bilgi mesajı kutucuğu
+    const container = document.getElementById('custom-disk-options');
+    let warnEl = document.getElementById('space-warn');
+    if (!warnEl && container) {
+        warnEl = document.createElement('p');
+        warnEl.id = 'space-warn';
+        warnEl.style.fontSize = '12px';
+        warnEl.style.marginTop = '10px';
+        container.appendChild(warnEl);
+    }
+
+    if (calculatedMax < minGb) {
+        calculatedMax = minGb;
+        if (warnEl) {
+            warnEl.style.color = 'var(--accent-red)';
+            warnEl.innerText = `Seçili diskte yeterli bölümleme alanı yok! (Mevcut Dolu Alan: ${usedGb.toFixed(1)} GB. Kurulum için diskte en az 40 GB kullanılabilir boş alan gerekir).`;
+        }
+    } else {
+        if (warnEl) {
+            warnEl.style.color = 'var(--accent-green)';
+            warnEl.innerText = `Seçtiğiniz ${totalCap}GB kapasiteli diskte yaklaşık ${usedGb.toFixed(1)} GB halihazırda (Örn: Windows vb. tarafından) kullanılıyor. Kaydırma çubuğu maksimum ${calculatedMax} GB shrink işlemi için optimize edilmiştir.`;
+        }
+    }
 
     slider.min = minGb;
     slider.max = calculatedMax;
@@ -725,7 +778,14 @@ const translations = {
 
         p7Title: "Kurulum Gerçekleştiriliyor...",
         p7ToggleLog: "Kurulum Loglarını Göster / Gizle",
-        p7Reboot: "Sistemi Yeniden Başlat"
+        p7Reboot: "Sistemi Yeniden Başlat",
+
+        s1Title: "ro-ASD'nin Gücünü Keşfedin",
+        s1Desc: "Modern, fütüristik ve yepyeni masaüstü deneyimi.",
+        s2Title: "Maksimum Performans",
+        s2Desc: "Oyunlar ve ağır iş yükleri için özel optimize edilmiş ultra hızlı mimari.",
+        s3Title: "Sınırsız Özelleştirme",
+        s3Desc: "Rengarenk temalar ve zengin araçlarla masaüstünüzü tamamen kendinize ait kılın."
     },
     en: {
         topTitle: "Welcome to ro-ASD Installer",
@@ -780,7 +840,14 @@ const translations = {
 
         p7Title: "Installation in Progress...",
         p7ToggleLog: "Show / Hide Installation Logs",
-        p7Reboot: "Reboot System"
+        p7Reboot: "Reboot System",
+
+        s1Title: "Discover the Power of ro-ASD",
+        s1Desc: "Modern, futuristic, and a brand new desktop experience.",
+        s2Title: "Maximum Performance",
+        s2Desc: "Ultra-fast architecture specially optimized for gaming and heavy workloads.",
+        s3Title: "Limitless Customization",
+        s3Desc: "Make your desktop truly yours with colorful themes and rich customization tools."
     }
 };
 
@@ -863,6 +930,14 @@ function changeLanguage(lang) {
     document.querySelector('#page-7 h2').innerText = t.p7Title;
     document.querySelector('#page-7 button.btn-secondary').innerText = t.p7ToggleLog;
     document.querySelector('#reboot-row button').innerText = t.p7Reboot;
+
+    // Slideshow translations
+    safelySetText('s1Title', t.s1Title);
+    safelySetText('s1Desc', t.s1Desc);
+    safelySetText('s2Title', t.s2Title);
+    safelySetText('s2Desc', t.s2Desc);
+    safelySetText('s3Title', t.s3Title);
+    safelySetText('s3Desc', t.s3Desc);
 }
 
 function safelySetText(id, text) {
@@ -905,7 +980,6 @@ function setupCustomSelects() {
 
                 optionsList.querySelectorAll('.custom-option').forEach(o => o.classList.remove('selected'));
                 this.classList.add('selected');
-
                 customSelect.classList.remove('open');
             });
             optionsList.appendChild(optionDiv);
@@ -929,4 +1003,55 @@ function setupCustomSelects() {
     });
 }
 
-document.addEventListener("DOMContentLoaded", setupCustomSelects);
+// === Otomatik Kullanıcı Adı (Username) Üretici ===
+function initUsernameGenerator() {
+    const inputName = document.getElementById('inputName');
+    const inputSurname = document.getElementById('inputSurname');
+    const inputUsername = document.getElementById('inputUsername');
+
+    if (!inputName || !inputSurname || !inputUsername) return;
+
+    // Kullanıcı adı alanına manuel müdahale edip etmediğini kontrol et
+    let isUsernamePristine = true;
+
+    inputUsername.addEventListener('input', function () {
+        if (this.value.length > 0) isUsernamePristine = false;
+        else isUsernamePristine = true;
+    });
+
+    const generateUsername = () => {
+        if (!isUsernamePristine) return; // Kullanıcı kendi eliyle değiştirdiyse oto devredışı
+
+        const nameText = inputName.value.trim().toLowerCase();
+        const surnameText = inputSurname.value.trim().toLowerCase();
+
+        if (!nameText && !surnameText) {
+            inputUsername.value = "";
+            return;
+        }
+
+        // Türkçe karakterleri çevirme haritası
+        const trMap = {
+            'ç': 'c', 'ğ': 'g', 'ı': 'i', 'ö': 'o', 'ş': 's', 'ü': 'u',
+            'â': 'a', 'î': 'i'
+        };
+
+        const cleanString = (str) => {
+            return str.replace(/[çğıöşüâî]/g, match => trMap[match])
+                .replace(/[^a-z0-9]/g, ''); // Sadece harf ve rakam kalsın (boşlukları sil)
+        };
+
+        const firstLetter = nameText.length > 0 ? cleanString(nameText)[0] : "";
+        const cleanSurname = cleanString(surnameText);
+
+        inputUsername.value = firstLetter + cleanSurname;
+    };
+
+    inputName.addEventListener('input', generateUsername);
+    inputSurname.addEventListener('input', generateUsername);
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+    setupCustomSelects();
+    initUsernameGenerator();
+});
