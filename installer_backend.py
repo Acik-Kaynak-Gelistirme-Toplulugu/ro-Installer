@@ -130,62 +130,88 @@ class InstallWorker(QThread):
             
             # 0. HEDEF DİSKTEKİTÜM BAĞLANTILARI KES VE DİSKİ TEMİZLE
             self.log_signal.emit(f"    [*] Disk üzerindeki varsa eski bağlantılar (mount/swap) koparılıyor...")
+            
+            # Force unmount anything on the target disk, then sync
             self.run_cmd(f"swapoff {target_hdd}* 2>/dev/null || true")
-            self.run_cmd(f"umount -l {target_hdd}* 2>/dev/null || true")
+            self.run_cmd(f"umount -R {target_hdd}* 2>/dev/null || true")
+            
+            # Zap the disk cleanly including MBR and GPT structures (fixes stubborn remnants)
+            self.run_cmd(f"sgdisk --zap-all {target_hdd} 2>/dev/null || true")
             self.run_cmd(f"wipefs -a -f {target_hdd} 2>/dev/null || true")
-            time.sleep(1)
+            
+            # Give kernel time to process wipes
+            self.run_cmd("udevadm settle")
+            self.run_cmd(f"partprobe -s {target_hdd} 2>/dev/null || true")
+            self.run_cmd("udevadm settle")
+            time.sleep(2)
+
+            # NVMe ve Loop disklerinde disk isminin sonu rakamla bitiyorsa 'p' eklenmesi gerekir.
+            part_prefix = "p" if target_hdd[-1].isdigit() else ""
 
             # 1. GPT Partition Table
             self.run_cmd(f"parted -s {target_hdd} mklabel gpt")
             
             # 2. EFI System Partition (FAT32, 1GB ~ 1024MB)
             self.log_signal.emit(self.t('prepare_log3'))
-            self.run_cmd(f"parted -s {target_hdd} mkpart primary fat32 1MiB 1025MiB")
+            self.run_cmd(f"parted -a optimal -s {target_hdd} mkpart primary fat32 1MiB 1025MiB")
             self.run_cmd(f"parted -s {target_hdd} set 1 boot on")
             self.run_cmd(f"parted -s {target_hdd} set 1 esp on")
             
             # 3. Swap Partition (Linux-swap, 4GB ~ 4096MB)
             self.log_signal.emit(self.t('prepare_log4'))
-            self.run_cmd(f"parted -s {target_hdd} mkpart primary linux-swap 1025MiB 5121MiB")
+            self.run_cmd(f"parted -a optimal -s {target_hdd} mkpart primary linux-swap 1025MiB 5121MiB")
             
             # 4. Root Partition (Kalan Tüm Alan)
             self.log_signal.emit(f"    Root bölümü ({fs_type}) oluşturuluyor...")
-            self.run_cmd(f"parted -s {target_hdd} mkpart primary {fs_type} 5121MiB 100%")
+            self.run_cmd(f"parted -a optimal -s {target_hdd} mkpart primary {fs_type} 5121MiB 100%")
             
-            # === FORMATLAMA (MKFS) ===
+            # === PARTITION SYNCHRONIZATION (THE FIX) ===
             self.status_signal.emit("Çekirdek disk bilgilerini güncelliyor (Partprobe)...")
+            
+            # Notify OS to re-read partition tables
             self.run_cmd(f"partprobe {target_hdd} || true")
             self.run_cmd("udevadm settle")
+            
+            # Synchronize cached writes to persistent storage
+            self.run_cmd("sync")
             time.sleep(3)
             
-            # NVMe ve Loop disklerinde disk isminin sonu rakamla bitiyorsa 'p' eklenmesi gerekir.
-            # Örn: /dev/sda -> /dev/sda1 fakat /dev/nvme0n1 -> /dev/nvme0n1p1
-            part_prefix = "p" if target_hdd[-1].isdigit() else ""
-            
-            # Disk bölümlerinin kernel tarafından oluşturulduğundan emin olmak için bekleme döngüsü
+            # Disk bölümlerinin kernel tarafından oluşturulduğundan ve bloğun kullanılabilir olduğundan emin olmak için
             for i in range(1, 4):
                 part_path = f"{target_hdd}{part_prefix}{i}"
                 wait_count = 0
-                while not os.path.exists(part_path) and wait_count < 10:
-                    self.log_signal.emit(f"    [UYARI] {part_path} henüz hazır değil, bekleniyor... ({wait_count}/10)")
-                    time.sleep(1)
+                
+                # Check BOTH if path exists and if blockdev can read it successfully
+                while wait_count < 15:
+                    if os.path.exists(part_path):
+                        # Use blockdev to check if kernel actually provides a valid lookup yet
+                        ret, _ = self.run_cmd(f"blockdev --getsize64 {part_path} 2>/dev/null || echo FAIL", shell=True)
+                        if "FAIL" not in _:
+                            break
+                            
+                    self.log_signal.emit(f"    [UYARI] {part_path} senkronize ediliyor... ({wait_count}/15)")
+                    self.run_cmd(f"partx -u {part_path} 2>/dev/null || true")
                     self.run_cmd("udevadm settle")
+                    time.sleep(1)
                     wait_count += 1
                 
-                if not os.path.exists(part_path):
-                    raise Exception(f"Kritik Hata: İşletim sistemi {part_path} donanımını okuyamadı! Disk yazmaya karşı korumalı veya kullanımda (Mount) olabilir.")
+                if wait_count >= 15:
+                    raise Exception(f"Kritik Hata: İşletim sistemi {part_path} cihaz bloklarını okuyamadı! Diskiniz bozuk, salt-okunur modunda veya mount race condition sürüyor olabilir.")
             
             self.status_signal.emit("Disk bölümleri biçimlendiriliyor (Format)...")
+            # Force options (-F for fat/ext4, -f for swap/btrfs/xfs)
             self.run_cmd(f"mkfs.fat -F32 {target_hdd}{part_prefix}1", shell=True)
-            self.run_cmd(f"mkswap {target_hdd}{part_prefix}2", shell=True)
+            self.run_cmd(f"mkswap -f {target_hdd}{part_prefix}2", shell=True)
             
             if fs_type == 'ext4':
-                self.run_cmd(f"mkfs.ext4 -F {target_hdd}{part_prefix}3", shell=True)
+                self.run_cmd(f"mkfs.ext4 -F -q {target_hdd}{part_prefix}3", shell=True)
             elif fs_type == 'btrfs':
-                self.run_cmd(f"mkfs.btrfs -f {target_hdd}{part_prefix}3", shell=True)
+                self.run_cmd(f"mkfs.btrfs -f -q {target_hdd}{part_prefix}3", shell=True)
             elif fs_type == 'xfs':
-                self.run_cmd(f"mkfs.xfs -f {target_hdd}{part_prefix}3", shell=True)
+                self.run_cmd(f"mkfs.xfs -f -q {target_hdd}{part_prefix}3", shell=True)
             
+            # Final sync before mounting
+            self.run_cmd("sync")
             self.run_cmd("udevadm settle")
             time.sleep(2)
 
