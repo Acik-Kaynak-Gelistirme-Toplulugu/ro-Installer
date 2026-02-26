@@ -232,6 +232,13 @@ class InstallWorker(QThread):
         self.run_cmd(f"mkdir -p {self.target_mount}")
         self.run_cmd(f"mount {target_hdd}{part_prefix}3 {self.target_mount}") # ROOT Mount
         
+        # Calamares method: Restore SELinux context of the mount point immediately (avoids issues later)
+        if os.path.exists("/sys/fs/selinux"): # Fedora specific safety
+            try:
+                self.run_cmd(f"chcon --reference=/ {self.target_mount} 2>/dev/null || true")
+            except Exception:
+                self.log_signal.emit(f"    [UYARI] SELinux chcon uygulanamadı, yoksayılıyor.")
+        
         self.run_cmd(f"mkdir -p {self.target_mount}/boot/efi")
         self.run_cmd(f"mount {target_hdd}{part_prefix}1 {self.target_mount}/boot/efi") # ESP Mount
         
@@ -243,9 +250,11 @@ class InstallWorker(QThread):
         self.status_signal.emit(self.t('copy_status'))
         self.log_signal.emit(self.t('copy_log1'))
         
-        # Gerçek rsync komutu (Canlı sistemin RAM harici tüm kalıcı sistem bloklarını hedef diske aktarır)
+        # Gerçek rsync komutu (Calamares tarzı sağlamlaştırılmış kopyalama: SELinux, ACL, Sparse, Hardlink ile)
+        # -a (Archive), -H (Hard links), -A (ACLs), -X (Extended Attributes / SELinux), -S (Sparse), -r (Recursive)
         rsync_cmd = (
-            f"rsync -aAXv "
+            f"rsync -aHAXSr "
+            f"--filter='-x trusted.overlay.*' "
             f"--exclude='/dev/*' "
             f"--exclude='/proc/*' "
             f"--exclude='/sys/*' "
@@ -257,6 +266,10 @@ class InstallWorker(QThread):
             f"/ {self.target_mount}/"
         )
         self.run_cmd(rsync_cmd)
+        
+        # Calamares method: Ensure the mounted root has safe permissions (usually 777 accidentally from some filesystems)
+        self.run_cmd(f"chmod 0755 {self.target_mount} 2>/dev/null || true")
+        self.run_cmd("sync")
         
         for i in range(40, 75, 5):
             time.sleep(0.3)
