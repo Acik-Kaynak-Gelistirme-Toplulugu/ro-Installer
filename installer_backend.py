@@ -148,11 +148,21 @@ class InstallWorker(QThread):
             self.status_signal.emit("Çekirdek disk bilgilerini güncelliyor (Partprobe)...")
             self.run_cmd("partprobe " + target_hdd)
             self.run_cmd("udevadm settle")
-            time.sleep(2)
+            time.sleep(3)
             
             # NVMe ve Loop disklerinde disk isminin sonu rakamla bitiyorsa 'p' eklenmesi gerekir.
             # Örn: /dev/sda -> /dev/sda1 fakat /dev/nvme0n1 -> /dev/nvme0n1p1
             part_prefix = "p" if target_hdd[-1].isdigit() else ""
+            
+            # Disk bölümlerinin kernel tarafından oluşturulduğundan emin olmak için bekleme döngüsü
+            for i in range(1, 4):
+                part_path = f"{target_hdd}{part_prefix}{i}"
+                wait_count = 0
+                while not os.path.exists(part_path) and wait_count < 10:
+                    self.log_signal.emit(f"    [UYARI] {part_path} henüz hazır değil, bekleniyor... ({wait_count}/10)")
+                    time.sleep(1)
+                    self.run_cmd("udevadm settle")
+                    wait_count += 1
             
             self.status_signal.emit("Disk bölümleri biçimlendiriliyor (Format)...")
             self.run_cmd(f"mkfs.fat -F32 {target_hdd}{part_prefix}1")
@@ -164,6 +174,10 @@ class InstallWorker(QThread):
                 self.run_cmd(f"mkfs.btrfs -f {target_hdd}{part_prefix}3")
             elif fs_type == 'xfs':
                 self.run_cmd(f"mkfs.xfs -f {target_hdd}{part_prefix}3")
+            
+            self.run_cmd("udevadm settle")
+            time.sleep(2)
+
                 
         elif disk_type in ['Yanına', 'Install Alongside']:
             self.log_signal.emit(self.t('prepare_log_shrink'))
