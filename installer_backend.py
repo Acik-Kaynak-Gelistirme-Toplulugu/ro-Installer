@@ -29,7 +29,7 @@ class InstallWorker(QThread):
                 'prepare_status': "Disk yapılandırılıyor ({} - {})...",
                 'prepare_log1': "[*] Disk Hazırlığı Başladı. Tür: {}, FS: {}",
                 'prepare_log2': "    {} diski tamamen siliniyor (GPT Parti tablosu)...",
-                'prepare_log3': "    EFI Boot bölümü (512MB) oluşturuluyor...",
+                'prepare_log3': "    EFI Boot bölümü (1GB) oluşturuluyor...",
                 'prepare_log4': "    Swap bölümü (4GB) oluşturuluyor...",
                 'prepare_log_shrink': "    Disk küçültme ve yeni alan açma komutları hesaplanıyor...",
                 'mount_status': "Yeni disk bölümleri sisteme bağlanıyor (Mount)...",
@@ -64,7 +64,7 @@ class InstallWorker(QThread):
                 'prepare_status': "Configuring disk ({} - {})...",
                 'prepare_log1': "[*] Disk Preparation Started. Type: {}, FS: {}",
                 'prepare_log2': "    {} disk is being completely erased (GPT Partition table)...",
-                'prepare_log3': "    Creating EFI Boot partition (512MB)...",
+                'prepare_log3': "    Creating EFI Boot partition (1GB)...",
                 'prepare_log4': "    Creating Swap partition (4GB)...",
                 'prepare_log_shrink': "    Calculating disk shrinking and new space commands...",
                 'mount_status': "Mounting new disk partitions to the system...",
@@ -127,26 +127,34 @@ class InstallWorker(QThread):
         
         if disk_type in ['Tamamen', 'Erase Entire Disk']:
             self.log_signal.emit(self.t('prepare_log2', target_hdd))
+            
+            # 0. HEDEF DİSKTEKİTÜM BAĞLANTILARI KES VE DİSKİ TEMİZLE
+            self.log_signal.emit(f"    [*] Disk üzerindeki varsa eski bağlantılar (mount/swap) koparılıyor...")
+            self.run_cmd(f"swapoff {target_hdd}* 2>/dev/null || true")
+            self.run_cmd(f"umount -l {target_hdd}* 2>/dev/null || true")
+            self.run_cmd(f"wipefs -a -f {target_hdd} 2>/dev/null || true")
+            time.sleep(1)
+
             # 1. GPT Partition Table
             self.run_cmd(f"parted -s {target_hdd} mklabel gpt")
             
-            # 2. EFI System Partition (FAT32, ~512MB)
+            # 2. EFI System Partition (FAT32, 1GB ~ 1024MB)
             self.log_signal.emit(self.t('prepare_log3'))
-            self.run_cmd(f"parted -s {target_hdd} mkpart primary fat32 1MiB 513MiB")
+            self.run_cmd(f"parted -s {target_hdd} mkpart primary fat32 1MiB 1025MiB")
             self.run_cmd(f"parted -s {target_hdd} set 1 boot on")
             self.run_cmd(f"parted -s {target_hdd} set 1 esp on")
             
-            # 3. Swap Partition (Linux-swap, ~4GB)
+            # 3. Swap Partition (Linux-swap, 4GB ~ 4096MB)
             self.log_signal.emit(self.t('prepare_log4'))
-            self.run_cmd(f"parted -s {target_hdd} mkpart primary linux-swap 513MiB 4609MiB")
+            self.run_cmd(f"parted -s {target_hdd} mkpart primary linux-swap 1025MiB 5121MiB")
             
             # 4. Root Partition (Kalan Tüm Alan)
             self.log_signal.emit(f"    Root bölümü ({fs_type}) oluşturuluyor...")
-            self.run_cmd(f"parted -s {target_hdd} mkpart primary {fs_type} 4609MiB 100%")
+            self.run_cmd(f"parted -s {target_hdd} mkpart primary {fs_type} 5121MiB 100%")
             
             # === FORMATLAMA (MKFS) ===
             self.status_signal.emit("Çekirdek disk bilgilerini güncelliyor (Partprobe)...")
-            self.run_cmd("partprobe " + target_hdd)
+            self.run_cmd(f"partprobe {target_hdd} || true")
             self.run_cmd("udevadm settle")
             time.sleep(3)
             
@@ -163,17 +171,20 @@ class InstallWorker(QThread):
                     time.sleep(1)
                     self.run_cmd("udevadm settle")
                     wait_count += 1
+                
+                if not os.path.exists(part_path):
+                    raise Exception(f"Kritik Hata: İşletim sistemi {part_path} donanımını okuyamadı! Disk yazmaya karşı korumalı veya kullanımda (Mount) olabilir.")
             
             self.status_signal.emit("Disk bölümleri biçimlendiriliyor (Format)...")
-            self.run_cmd(f"mkfs.fat -F32 {target_hdd}{part_prefix}1")
-            self.run_cmd(f"mkswap {target_hdd}{part_prefix}2")
+            self.run_cmd(f"mkfs.fat -F32 {target_hdd}{part_prefix}1", shell=True)
+            self.run_cmd(f"mkswap {target_hdd}{part_prefix}2", shell=True)
             
             if fs_type == 'ext4':
-                self.run_cmd(f"mkfs.ext4 -F {target_hdd}{part_prefix}3")
+                self.run_cmd(f"mkfs.ext4 -F {target_hdd}{part_prefix}3", shell=True)
             elif fs_type == 'btrfs':
-                self.run_cmd(f"mkfs.btrfs -f {target_hdd}{part_prefix}3")
+                self.run_cmd(f"mkfs.btrfs -f {target_hdd}{part_prefix}3", shell=True)
             elif fs_type == 'xfs':
-                self.run_cmd(f"mkfs.xfs -f {target_hdd}{part_prefix}3")
+                self.run_cmd(f"mkfs.xfs -f {target_hdd}{part_prefix}3", shell=True)
             
             self.run_cmd("udevadm settle")
             time.sleep(2)
