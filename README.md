@@ -6,6 +6,7 @@
 ## Türkçe
 ro-Installer, **ro-ASD** işletim sistemi için özel olarak tasarlanmış, modern bilgisayarlara yönelik yeni nesil bir sistem kurulum (Installer) aracıdır. Python (PyQt6 WebEngine) arka planı ve güncel Web Teknolojileri (HTML/CSS/JS) kullanılarak geliştirilmiş, "Glassmorphism" temalı şık ve sezgisel bir kullanıcı arayüzü sunar.
 
+
 ### Özellikler
 - **Dinamik Disk Yönetimi:** `lsblk` üzerinden canlı disk taraması yaparak donanımlarınızı listeler, diskinizdeki boş/dolu alanı anlık hesaplayarak Dual-Boot (Yanına Kur) sınırlarını güvenliye alır.
 - **Kurulum Tipleri:** Tüm diski silme veya mevcut sistemin yanına kurma (Dual Boot).
