@@ -1,0 +1,13 @@
+name: Notify Ro-Main
+on: [push]
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Ro-Main Update
+        run: |
+          curl -X POST -u "${{ secrets.RO_PAT_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/Project-Ro-ASD/Ro-Main/dispatches \
+          -d '{"event_type": "submodule_update"}'
