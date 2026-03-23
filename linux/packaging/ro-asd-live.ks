@@ -22,23 +22,17 @@ part / --size 12288 --fstype ext4
 xconfig --startxonboot
 
 %packages
-# Sistemin bel kemigi ve donanim suruculeri
 @core
 kernel
 kernel-modules
 kernel-modules-extra
 @hardware-support
-
-# Masaustu ve araclar
--man-db
 dracut-live
 @^kde-desktop-environment
 sddm
 sddm-kcm
 kwalletmanager5
 polkit-kde
-
-# Ozel RPM'ler ve yardimci toollar
 ro_installer_beta
 gdisk
 parted
@@ -70,6 +64,10 @@ EOF
 mkdir -p /home/roasd/Desktop
 cp /usr/share/applications/ro-installer.desktop /home/roasd/Desktop/
 chmod +x /home/roasd/Desktop/ro-installer.desktop
+
+# Otomatik baslatma
+mkdir -p /etc/xdg/autostart
+cp /usr/share/applications/ro-installer.desktop /etc/xdg/autostart/ro-installer.desktop
 
 # Yetkileri roasd kullanicisina kitliyoruz
 chown -R roasd:roasd /home/roasd
