@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
@@ -14,7 +15,38 @@ import 'screens/manual_partition_screen.dart';
 import 'screens/kernel_screen.dart';
 import 'screens/installing_screen.dart';
 
-void main() {
+void main() async {
+  // ═══════════════════════════════════════════════════
+  // ROOT YETKİ KONTROLÜ
+  // Disk yazma, mount, mkfs, sgdisk gibi tüm komutlar
+  // root yetkisi gerektirir. Root değilse pkexec ile
+  // kendini yeniden başlatır.
+  // ═══════════════════════════════════════════════════
+  
+  // Mevcut kullanıcı root mu kontrol et
+  final uid = int.tryParse(Platform.environment['UID'] ?? 
+      (await Process.run('id', ['-u'])).stdout.toString().trim()) ?? -1;
+  
+  if (uid != 0) {
+    // Root değiliz — pkexec ile yeniden başlat
+    print('[ro-Installer] Root yetkisi gerekiyor (UID: $uid). pkexec ile yükseltiliyor...');
+    
+    // Kendi çalıştırılabilir dosyamızın yolunu bul
+    final execPath = Platform.resolvedExecutable;
+    
+    try {
+      final result = await Process.run('pkexec', [execPath, ...Platform.executableArguments]);
+      // pkexec bittiğinde (kullanıcı iptal etti veya uygulama kapandı)
+      exit(result.exitCode);
+    } catch (e) {
+      print('[ro-Installer] pkexec başlatılamadı: $e');
+      print('[ro-Installer] Lütfen uygulamayı "sudo ro-installer" ile başlatın.');
+      exit(1);
+    }
+  }
+
+  print('[ro-Installer] Root yetkisi doğrulandı (UID: $uid). Başlatılıyor...');
+
   runApp(
     ChangeNotifierProvider(
       create: (_) => InstallerState(),

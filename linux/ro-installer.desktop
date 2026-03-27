@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Ro-ASD Yükleyici
+Name[en]=Ro-ASD Installer
+Name[tr]=Ro-ASD Yükleyici
+Comment=Ro-ASD işletim sistemini bilgisayarınıza kurun
+Comment[en]=Install Ro-ASD Operating System to your computer
+Comment[tr]=Ro-ASD işletim sistemini bilgisayarınıza kurun
+# Exec: Doğrudan binary'yi çağırır — main.dart'taki root kontrolü pkexec'i tetikler
+Exec=/usr/lib/ro-installer/ro-installer
+Icon=drive-harddisk
+Terminal=false
+Categories=System;
+Keywords=install;installer;setup;os;roasd;
+StartupNotify=true
+StartupWMClass=ro_installer
+# X-KDE-AuthorizeAction yerine polkit policy kullanılır
