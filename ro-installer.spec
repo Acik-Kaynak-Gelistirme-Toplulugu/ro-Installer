@@ -4,9 +4,8 @@ Release:        1%{?dist}
 Summary:        Ro-ASD Linux Installer using Flutter
 License:        GPLv3
 URL:            https://github.com/Project-Ro-ASD
+# COPR Source-from-Git mode handles the source automatically.
 
-# COPR otomatik GitHub'dan kaynak kodları (tar) oluşturacaktır.
-Source0:        %{name}-%{version}.tar.gz
 
 # --- BUILD ZAMANI GEREKSİNİMLERİ (FLUTTER / COMPILER) ---
 BuildRequires:  git
@@ -37,8 +36,9 @@ Dart ve Flutter ile yazılmış grafik arayüzlü Live İşletim Sistemi Kurucus
 Bu paket direkt COPR üzerinde GitHub kaynak kodu alınarak derlenmiştir.
 
 %prep
-# Otomatik git tar.gz arşivini çıkarır (COPR SCM özelliği ile)
-%autosetup -n %{name}-%{version}
+# COPR SCM automatically manages the directory name during snapshot.
+%autosetup -p1 -n %{name}
+
 
 %build
 # DİKKAT: COPR'ın bu adımı yapabilmesi için Proje -> Ayarlar -> "Enable network in build environment" 
