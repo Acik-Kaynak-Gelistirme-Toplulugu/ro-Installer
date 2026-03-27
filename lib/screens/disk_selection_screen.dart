@@ -112,6 +112,7 @@ class _DiskSelectionScreenState extends State<DiskSelectionScreen> {
                                   final isSelected = state.selectedDisk == disk['name'];
                                   final isLive = disk['isLive'] == true;
                                   final isSafe = disk['isSafe'] == true;
+                                  final isHostOS = disk['isHostOS'] == true;
 
                                   IconData diskIcon = Icons.save_alt;
                                   Color iconColor = isSelected ? theme.colorScheme.primary : Colors.grey;
@@ -122,12 +123,17 @@ class _DiskSelectionScreenState extends State<DiskSelectionScreen> {
                                   } else if (isLive) {
                                     diskIcon = Icons.usb;
                                     iconColor = Colors.redAccent.withOpacity(0.5);
+                                  } else if (isHostOS) {
+                                    diskIcon = Icons.computer;
+                                    iconColor = Colors.yellow.shade700;
                                   }
 
                                   final double sizeGB = disk['size'] is int ? (disk['size'] as int) / (1024*1024*1024) : 0;
-                                  String subtitle = "${disk['type']} • ${sizeGB.toStringAsFixed(1)} GB";
-                                  if (isLive) subtitle = "Cannot Format (Live OS USB)";
-                                  if (isSafe) subtitle = "Safe Test Environment";
+                                  String sizeStr = "${sizeGB.toStringAsFixed(1)} GB";
+                                  String subtitle = "${disk['type']} • $sizeStr";
+                                  if (isLive) subtitle = "Cannot Format (Live OS USB) • $sizeStr";
+                                  else if (isHostOS) subtitle = "Host OS (Kurulum Risklidir) • $sizeStr";
+                                  else if (isSafe) subtitle = "Safe Test Environment • $sizeStr";
 
                                   return GestureDetector(
                                     onTap: () {
@@ -154,7 +160,7 @@ class _DiskSelectionScreenState extends State<DiskSelectionScreen> {
                                               crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
                                                 Text(disk['name'], style: TextStyle(fontWeight: FontWeight.bold, color: isLive && !isSelected ? Colors.grey : textColor)),
-                                                Text(subtitle, style: TextStyle(color: isLive ? Colors.redAccent.withOpacity(0.7) : Colors.grey, fontSize: 13, fontWeight: isLive ? FontWeight.bold : FontWeight.normal)),
+                                                Text(subtitle, style: TextStyle(color: isLive ? Colors.redAccent.withOpacity(0.7) : (isHostOS ? Colors.yellow.shade700 : Colors.grey), fontSize: 13, fontWeight: (isLive || isHostOS) ? FontWeight.bold : FontWeight.normal)),
                                               ],
                                             ),
                                           ),

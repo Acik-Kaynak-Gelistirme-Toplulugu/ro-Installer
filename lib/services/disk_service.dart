@@ -39,13 +39,17 @@ class DiskService {
 
             // Cihazın alt bölümlerinde (partition) / veya /boot monte mi? 
             bool hasCriticalMount = false;
+            bool isHostOS = false;
             if (d.containsKey('children')) {
                for (var child in (d['children'] as List<dynamic>)) {
                   if (child.containsKey('mountpoints') && child['mountpoints'] != null) {
                      for (var mp in (child['mountpoints'] as List<dynamic>)) {
-                        if (mp == '/' || mp == '/boot' || mp.toString().contains('/run/initramfs') || mp.toString().contains('/live')) {
+                        if (mp.toString().contains('/run/initramfs') || mp.toString().contains('/live')) {
                            hasCriticalMount = true;
                            isLive = true;
+                        }
+                        if (mp == '/' || mp == '/boot') {
+                           isHostOS = true;
                         }
                      }
                   }
@@ -58,6 +62,7 @@ class DiskService {
               'size': d['size'] ?? 0,
               'type': d['type'] ?? 'disk',
               'isLive': isLive || hasCriticalMount,
+              'isHostOS': isHostOS,
               'isSafe': false,
             });
           }

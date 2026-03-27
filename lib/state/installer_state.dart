@@ -109,6 +109,9 @@ class InstallerState extends ChangeNotifier {
   String fileSystem = 'btrfs'; // Deneysel için btrfs
   String partitionMethod = 'full'; 
   double linuxDiskSizeGB = 60.0; 
+
+  // Manuel Bölümlendirme Planı / Haritası
+  List<Map<String, dynamic>> manualPartitions = [];
   
   
   // ---- 8. Kernel ----
@@ -169,8 +172,13 @@ class InstallerState extends ChangeNotifier {
   }
 
   void selectDisk(Map<String, dynamic> diskObj) {
+    final newDisk = diskObj['name'] as String;
+    // Eğer önceden seçilen disk ile yenisi farklıysa eski disk bölümlerini iptal et (Sıfırla)
+    if (selectedDisk != newDisk) {
+       manualPartitions.clear();
+    }
     selectedDiskDetails = diskObj;
-    selectedDisk = diskObj['name'] as String;
+    selectedDisk = newDisk;
     
     // Boyutu Byte'dan GB'a çeviriyoruz
     final sizeBytes = diskObj['size'];

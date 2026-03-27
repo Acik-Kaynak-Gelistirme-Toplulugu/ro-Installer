@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../state/installer_state.dart';
+import '../services/partition_service.dart';
 
 class ManualPartitionScreen extends StatefulWidget {
   const ManualPartitionScreen({super.key});
@@ -10,15 +12,226 @@ class ManualPartitionScreen extends StatefulWidget {
 }
 
 class _ManualPartitionScreenState extends State<ManualPartitionScreen> {
-  // Simülasyon için sahte disk bölümleri
-  final List<Map<String, String>> _mockPartitions = [
-    {"name": "/dev/sda1", "type": "fat32", "size": "512 MB", "mount": "/boot/efi", "flags": "boot, esp"},
-    {"name": "/dev/sda2", "type": "ext4", "size": "120 GB", "mount": "/", "flags": ""},
-    {"name": "/dev/sda3", "type": "btrfs", "size": "370 GB", "mount": "/home", "flags": ""},
-    {"name": "/dev/sda4", "type": "linux-swap", "size": "9.5 GB", "mount": "[SWAP]", "flags": ""},
-  ];
-
   int? _selectedIndex;
+  bool _isLoading = true;
+  String? _loadedDisk;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final state = Provider.of<InstallerState>(context);
+    if (_loadedDisk != state.selectedDisk) {
+       _loadedDisk = state.selectedDisk;
+       _loadPartitions();
+    }
+  }
+
+  void _loadPartitions() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+       if (!mounted) return;
+       final state = Provider.of<InstallerState>(context, listen: false);
+       setState(() => _isLoading = true);
+       
+       if (state.manualPartitions.isEmpty && state.selectedDisk.isNotEmpty) {
+          final realParts = await PartitionService.instance.getPartitions(state.selectedDisk);
+          if (mounted) {
+             state.manualPartitions = realParts;
+          }
+       }
+       if (mounted) setState(() => _isLoading = false);
+    });
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes >= 1024 * 1024 * 1024) {
+      return "${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB";
+    } else {
+      return "${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB";
+    }
+  }
+
+  void _openAddDialog(BuildContext context, InstallerState state) {
+    if (_selectedIndex == null || _selectedIndex! >= state.manualPartitions.length) return;
+    
+    final part = state.manualPartitions[_selectedIndex!];
+    if (part['isFreeSpace'] != true) return;
+
+    final maxMb = (part['sizeBytes'] as int) ~/ (1024 * 1024);
+    int inputMb = maxMb;
+    
+    String tempFormat = 'btrfs';
+    String tempMount = '/';
+
+    final textController = TextEditingController(text: inputMb.toString());
+
+    showDialog(
+       context: context,
+       builder: (c) {
+          return StatefulBuilder(builder: (c, setDialogState) {
+             return AlertDialog(
+                title: const Text("Yeni Bölüm Oluştur"),
+                content: Column(
+                   mainAxisSize: MainAxisSize.min,
+                   children: [
+                      const Text("DİKKAT: İşlem planlanacaktır, hemen uygulanmaz.", style: TextStyle(color: Colors.orange, fontSize: 12)),
+                      const SizedBox(height: 16),
+                      TextField(
+                         controller: textController,
+                         keyboardType: TextInputType.number,
+                         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                         decoration: InputDecoration(
+                            labelText: 'Boyut (MB) [Maksimum: $maxMb MB]',
+                         ),
+                         onChanged: (v) {
+                            int? parsed = int.tryParse(v);
+                            if (parsed != null && parsed > maxMb) {
+                               textController.text = maxMb.toString();
+                            }
+                         },
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                         value: tempFormat,
+                         decoration: const InputDecoration(labelText: 'Dosya Sistemi (File System)'),
+                         items: ['btrfs', 'ext4', 'xfs', 'fat32', 'linux-swap'].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                         onChanged: (v) {
+                             setDialogState(() {
+                                 tempFormat = v!;
+                                 if (tempFormat == 'fat32') tempMount = '/boot/efi';
+                             });
+                         },
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                         value: tempMount,
+                         decoration: const InputDecoration(labelText: 'Bağlama Noktası (Mount Point)'),
+                         items: ['/', '/home', '/boot', '/boot/efi', '[SWAP]', 'unmounted'].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                         onChanged: (v) => setDialogState(() => tempMount = v!),
+                      ),
+                   ],
+                ),
+                actions: [
+                   TextButton(onPressed: () => Navigator.pop(c), child: const Text("İptal")),
+                   ElevatedButton(
+                      onPressed: () {
+                         int chosenMb = int.tryParse(textController.text) ?? maxMb;
+                         if (chosenMb <= 0) return;
+                         if (chosenMb > maxMb) chosenMb = maxMb;
+                         
+                         int newBytes = chosenMb * 1024 * 1024;
+                         int remainingBytes = (part['sizeBytes'] as int) - newBytes;
+
+                         setState(() {
+                            state.manualPartitions.insert(_selectedIndex!, {
+                               'name': 'New Partition',
+                               'type': tempFormat,
+                               'sizeBytes': newBytes,
+                               'mount': tempMount,
+                               'flags': (tempMount == '/boot/efi' || tempFormat == 'fat32') ? 'boot, esp' : '',
+                               'isFreeSpace': false,
+                               'isPlanned': true
+                            });
+
+                            if (remainingBytes > 10 * 1024 * 1024) {
+                               state.manualPartitions[_selectedIndex! + 1]['sizeBytes'] = remainingBytes;
+                            } else {
+                               state.manualPartitions.removeAt(_selectedIndex! + 1);
+                            }
+                            _selectedIndex = null;
+                         });
+                         Navigator.pop(c);
+                      }, 
+                      child: const Text("Oluştur")
+                   )
+                ]
+             );
+          });
+       }
+    );
+  }
+
+  void _actionDelete(InstallerState state) {
+    if (_selectedIndex == null || _selectedIndex! >= state.manualPartitions.length) return;
+    final part = state.manualPartitions[_selectedIndex!];
+    if (part['isFreeSpace'] == true) return; // Zaten boşluk olanı silinmez
+
+    setState(() {
+       part['isFreeSpace'] = true;
+       part['type'] = 'unallocated';
+       part['name'] = 'Free Space';
+       part['mount'] = 'unmounted';
+       part['flags'] = '';
+       part['isPlanned'] = true;
+
+       // Merge Free Spaces (Yukarıdan Aşağıya)
+       for (int i = 0; i < state.manualPartitions.length - 1; i++) {
+          if (state.manualPartitions[i]['isFreeSpace'] == true && state.manualPartitions[i+1]['isFreeSpace'] == true) {
+             state.manualPartitions[i]['sizeBytes'] = (state.manualPartitions[i]['sizeBytes'] as int) + (state.manualPartitions[i+1]['sizeBytes'] as int);
+             state.manualPartitions.removeAt(i+1);
+             i--; // Yinelenen döngü kontrolü
+          }
+       }
+       _selectedIndex = null;
+    });
+  }
+
+  void _openFormatDialog(BuildContext context, InstallerState state) {
+    if (_selectedIndex == null || _selectedIndex! >= state.manualPartitions.length) return;
+    
+    final part = state.manualPartitions[_selectedIndex!];
+    if (part['isFreeSpace'] == true) return; // Free space formatlanmaz, bölüm oluşturulur
+
+    String tempFormat = ['btrfs', 'ext4', 'xfs', 'fat32', 'linux-swap', 'unallocated'].contains(part['type']) 
+        ? part['type'] : 'btrfs';
+    String tempMount = ['/', '/home', '/boot', '/boot/efi', '[SWAP]', 'unmounted'].contains(part['mount']) 
+        ? part['mount'] : 'unmounted';
+    
+    showDialog(
+       context: context,
+       builder: (c) {
+          return StatefulBuilder(builder: (c, setDialogState) {
+             return AlertDialog(
+                title: Text("Bölümü Formatla: ${part['name']}"),
+                content: Column(
+                   mainAxisSize: MainAxisSize.min,
+                   children: [
+                      const Text("DİKKAT: İşlem planlanacaktır, hemen uygulanmaz.", style: TextStyle(color: Colors.orange, fontSize: 12)),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                         value: tempFormat,
+                         decoration: const InputDecoration(labelText: 'Dosya Sistemi (File System)'),
+                         items: ['btrfs', 'ext4', 'xfs', 'fat32', 'linux-swap', 'unallocated'].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                         onChanged: (v) => setDialogState(() => tempFormat = v!),
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                         value: tempMount,
+                         decoration: const InputDecoration(labelText: 'Bağlama Noktası (Mount Point)'),
+                         items: ['/', '/home', '/boot', '/boot/efi', '[SWAP]', 'unmounted'].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                         onChanged: (v) => setDialogState(() => tempMount = v!),
+                      ),
+                   ],
+                ),
+                actions: [
+                   TextButton(onPressed: () => Navigator.pop(c), child: const Text("İptal")),
+                   ElevatedButton(
+                      onPressed: () {
+                         setState(() {
+                            part['type'] = tempFormat;
+                            part['mount'] = tempMount;
+                            if (tempMount == '/boot/efi' || tempFormat == 'fat32') part['flags'] = 'boot, esp';
+                            part['isPlanned'] = true; // Sisteme format atılacağı bildiriliyor
+                         });
+                         Navigator.pop(c);
+                      }, 
+                      child: const Text("Format Planla")
+                   )
+                ]
+             );
+          });
+       }
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +239,12 @@ class _ManualPartitionScreenState extends State<ManualPartitionScreen> {
     final theme = Theme.of(context);
     final isDark = state.themeMode == 'dark';
     final textColor = isDark ? Colors.white : Colors.black87;
+
+    bool isSelectedFreeSpace = false;
+    bool hasSelection = _selectedIndex != null && _selectedIndex! < state.manualPartitions.length;
+    if (hasSelection) {
+       isSelectedFreeSpace = state.manualPartitions[_selectedIndex!]['isFreeSpace'] == true;
+    }
 
     return Column(
       children: [
@@ -52,7 +271,7 @@ class _ManualPartitionScreenState extends State<ManualPartitionScreen> {
               ),
               const SizedBox(height: 16),
               Text(
-                state.t('part_title'), // Manual Partitioning
+                state.t('part_title'),
                 style: theme.textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: textColor,
@@ -62,7 +281,7 @@ class _ManualPartitionScreenState extends State<ManualPartitionScreen> {
               Text(
                 state.selectedDisk.isEmpty 
                     ? state.t('part_desc') 
-                    : "${state.t('part_desc')}\nSelected Disk: ${state.selectedDisk}",
+                    : "${state.t('part_desc')}\nSeçilen Hedef Disk: ${state.selectedDisk}",
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: textColor.withOpacity(0.6),
@@ -89,11 +308,11 @@ class _ManualPartitionScreenState extends State<ManualPartitionScreen> {
                   padding: const EdgeInsets.only(bottom: 12, left: 16, right: 16),
                   child: Row(
                     children: [
-                      Expanded(flex: 2, child: Text("DEVICE", style: _headerStyle(textColor))),
-                      Expanded(flex: 2, child: Text("TYPE", style: _headerStyle(textColor))),
-                      Expanded(flex: 2, child: Text("SIZE", style: _headerStyle(textColor))),
-                      Expanded(flex: 3, child: Text("MOUNT POINT", style: _headerStyle(textColor))),
-                      Expanded(flex: 2, child: Text("FLAGS", style: _headerStyle(textColor))),
+                      Expanded(flex: 2, child: Text("BÖLÜM (DEVICE)", style: _headerStyle(textColor))),
+                      Expanded(flex: 2, child: Text("FORMAT (TYPE)", style: _headerStyle(textColor))),
+                      Expanded(flex: 2, child: Text("BOYUT (SIZE)", style: _headerStyle(textColor))),
+                      Expanded(flex: 3, child: Text("BAĞLANTI (MOUNT POINT)", style: _headerStyle(textColor))),
+                      Expanded(flex: 2, child: Text("DURUM (FLAGS)", style: _headerStyle(textColor))),
                     ],
                   ),
                 ),
@@ -102,15 +321,15 @@ class _ManualPartitionScreenState extends State<ManualPartitionScreen> {
                 
                 // Table Body
                 Expanded(
-                  child: ListView.builder(
-                    itemCount: _mockPartitions.length + 1, // +1 for "Free Space"
+                  child: _isLoading 
+                    ? const Center(child: CircularProgressIndicator()) 
+                    : ListView.builder(
+                    itemCount: state.manualPartitions.length,
                     itemBuilder: (context, index) {
-                      if (index == _mockPartitions.length) {
-                        return _buildFreeSpaceRow(textColor, theme, index);
-                      }
-                      
-                      final part = _mockPartitions[index];
+                      final part = state.manualPartitions[index];
                       final isSelected = _selectedIndex == index;
+                      final isPlanned = part['isPlanned'] == true;
+                      final isFreeSpace = part['isFreeSpace'] == true;
                       
                       return GestureDetector(
                         onTap: () => setState(() => _selectedIndex = index),
@@ -119,19 +338,24 @@ class _ManualPartitionScreenState extends State<ManualPartitionScreen> {
                           margin: const EdgeInsets.only(bottom: 8),
                           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
                           decoration: BoxDecoration(
-                            color: isSelected ? theme.colorScheme.primary.withOpacity(0.2) : Colors.transparent,
+                            color: isSelected 
+                                ? theme.colorScheme.primary.withOpacity(0.3) 
+                                : (isPlanned && !isFreeSpace ? theme.colorScheme.secondary.withOpacity(0.1) : Colors.transparent),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: isSelected ? theme.colorScheme.primary : Colors.transparent,
+                              color: isSelected ? theme.colorScheme.primary : (isFreeSpace ? Colors.grey.withOpacity(0.3) : Colors.transparent),
                             ),
                           ),
                           child: Row(
                             children: [
-                              Expanded(flex: 2, child: Text(part["name"]!, style: TextStyle(color: textColor, fontWeight: FontWeight.bold))),
-                              Expanded(flex: 2, child: Text(part["type"]!, style: TextStyle(color: _getTypeColor(part["type"]!)))),
-                              Expanded(flex: 2, child: Text(part["size"]!, style: TextStyle(color: textColor.withOpacity(0.8)))),
-                              Expanded(flex: 3, child: Text(part["mount"]!, style: TextStyle(color: textColor.withOpacity(0.8)))),
-                              Expanded(flex: 2, child: Text(part["flags"]!, style: const TextStyle(color: Colors.grey, fontSize: 12))),
+                              Expanded(flex: 2, child: Text(part["name"], style: TextStyle(color: isFreeSpace ? Colors.grey : textColor, fontStyle: isFreeSpace ? FontStyle.italic : FontStyle.normal, fontWeight: isFreeSpace ? FontWeight.normal : FontWeight.bold))),
+                              Expanded(flex: 2, child: Text(part["type"], style: TextStyle(color: _getTypeColor(part["type"])))),
+                              Expanded(flex: 2, child: Text(_formatBytes(part["sizeBytes"]), style: TextStyle(color: textColor.withOpacity(0.8)))),
+                              Expanded(flex: 3, child: Text(part["mount"] ?? '-', style: TextStyle(color: textColor.withOpacity(isFreeSpace ? 0.3 : 0.8)))),
+                              Expanded(flex: 2, child: Text(
+                                isPlanned && !isFreeSpace ? "Planlandı ⚠️" : (part["flags"] ?? ''), 
+                                style: TextStyle(color: isPlanned ? Colors.orange : Colors.grey, fontSize: 12, fontWeight: isPlanned ? FontWeight.bold : FontWeight.normal)
+                              )),
                             ],
                           ),
                         ),
@@ -147,9 +371,9 @@ class _ManualPartitionScreenState extends State<ManualPartitionScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _actionBtn(context, state.t('part_add'), Icons.add),
-                    _actionBtn(context, state.t('part_delete'), Icons.remove),
-                    _actionBtn(context, state.t('part_format'), Icons.build),
+                    _actionBtn(context, state.t('part_add'), Icons.add, isSelectedFreeSpace ? () => _openAddDialog(context, state) : null),
+                    _actionBtn(context, state.t('part_delete'), Icons.remove, (!isSelectedFreeSpace && hasSelection) ? () => _actionDelete(state) : null),
+                    _actionBtn(context, state.t('part_format'), Icons.build, (!isSelectedFreeSpace && hasSelection) ? () => _openFormatDialog(context, state) : null),
                   ],
                 ),
               ],
@@ -173,7 +397,25 @@ class _ManualPartitionScreenState extends State<ManualPartitionScreen> {
                 ),
               ),
               ElevatedButton.icon(
-                onPressed: () => state.nextStep(),
+                onPressed: () {
+                   bool hasRoot = false;
+                   bool hasEfi = false;
+                   for (var p in state.manualPartitions) {
+                      if (p['isFreeSpace'] == true) continue;
+                      if (p['mount'] == '/') hasRoot = true;
+                      if (p['mount'] == '/boot/efi') hasEfi = true;
+                   }
+                   if (!hasRoot || !hasEfi) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                         const SnackBar(
+                           content: Text("Kuruluma devam etmek için tabloya en az bir Kök (/) ve EFI (/boot/efi) bölümü planlamanız gerekir!"), 
+                           backgroundColor: Colors.red
+                         )
+                      );
+                      return;
+                   }
+                   state.nextStep();
+                },
                 icon: const Icon(Icons.arrow_forward),
                 label: Text(state.t('next')),
                 style: theme.elevatedButtonTheme.style?.copyWith(
@@ -186,33 +428,6 @@ class _ManualPartitionScreenState extends State<ManualPartitionScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildFreeSpaceRow(Color textColor, ThemeData theme, int index) {
-    final isSelected = _selectedIndex == index;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedIndex = index),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-        decoration: BoxDecoration(
-          color: isSelected ? theme.colorScheme.primary.withOpacity(0.2) : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected ? theme.colorScheme.primary : Colors.transparent,
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(flex: 2, child: Text("Free Space", style: TextStyle(color: Colors.grey.shade400, fontStyle: FontStyle.italic))),
-            const Expanded(flex: 2, child: Text("unallocated", style: TextStyle(color: Colors.grey))),
-            Expanded(flex: 2, child: Text("1.2 GB", style: TextStyle(color: textColor.withOpacity(0.8)))),
-            const Expanded(flex: 3, child: Text("-", style: TextStyle(color: Colors.grey))),
-            const Expanded(flex: 2, child: Text("", style: TextStyle(color: Colors.grey))),
-          ],
-        ),
-      ),
     );
   }
 
@@ -229,19 +444,21 @@ class _ManualPartitionScreenState extends State<ManualPartitionScreen> {
       case 'btrfs': return Colors.blue;
       case 'fat32': return Colors.green;
       case 'linux-swap': return Colors.redAccent;
+      case 'unallocated': return Colors.grey;
       default: return Colors.grey;
     }
   }
 
-  Widget _actionBtn(BuildContext context, String label, IconData icon) {
+  Widget _actionBtn(BuildContext context, String label, IconData icon, VoidCallback? onPressed) {
     final theme = Theme.of(context);
+    final isDisabled = onPressed == null;
     return OutlinedButton.icon(
-      onPressed: () {},
+      onPressed: onPressed,
       icon: Icon(icon, size: 18),
       label: Text(label),
       style: OutlinedButton.styleFrom(
-        foregroundColor: theme.colorScheme.primary,
-        side: BorderSide(color: theme.colorScheme.primary.withOpacity(0.5)),
+        foregroundColor: isDisabled ? Colors.grey : theme.colorScheme.primary,
+        side: BorderSide(color: isDisabled ? Colors.grey.withOpacity(0.3) : theme.colorScheme.primary.withOpacity(0.5)),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       ),
     );
