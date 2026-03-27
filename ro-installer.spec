@@ -4,7 +4,7 @@ Release:        1%{?dist}
 Summary:        Ro-ASD Linux Installer using Flutter
 License:        GPLv3
 URL:            https://github.com/Project-Ro-ASD
-# COPR Source-from-Git mode handles the source automatically.
+Source0:        %{name}-%{version}.tar.gz
 
 
 # --- BUILD ZAMANI GEREKSİNİMLERİ (FLUTTER / COMPILER) ---
