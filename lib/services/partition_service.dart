@@ -8,15 +8,6 @@ class PartitionService {
   Future<List<Map<String, dynamic>>> getPartitions(String diskName) async {
     List<Map<String, dynamic>> partitionList = [];
     
-    // Eğer seçilen disk bizim laboratuvar diskimiz ise (Sanal Disk)
-    if (diskName == '/dev/RoASD_Safe_Disk') {
-       return [
-         {"name": "/dev/sda1", "type": "fat32", "sizeBytes": 512 * 1024 * 1024, "mount": "/boot/efi", "flags": "boot, esp", "isFreeSpace": false, "isPlanned": false},
-         {"name": "/dev/sda2", "type": "ext4", "sizeBytes": 50 * 1024 * 1024 * 1024, "mount": "/", "flags": "", "isFreeSpace": false, "isPlanned": false},
-         {"name": "Free Space", "type": "unallocated", "sizeBytes": 69 * 1024 * 1024 * 1024, "mount": "unmounted", "flags": "", "isFreeSpace": true, "isPlanned": false},
-       ];
-    }
-
     try {
       final result = await Process.run('lsblk', ['-J', '-b', '-o', 'NAME,FSTYPE,SIZE,MOUNTPOINT,PARTFLAGS', diskName]);
       if (result.exitCode == 0) {
